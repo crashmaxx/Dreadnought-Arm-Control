@@ -8,7 +8,7 @@
 12 channel mixed\
 1-4 full rate\
 5 on/off\
-6-13 half rate\
+6-13 half rate
 
 
 | Channel | Function |
@@ -22,4 +22,4 @@
 | 7 | Flame Thrower |
 | 8 | Bubbles |
 
-9 through 13 are available for future functions\
+9 through 13 are available for future functions
