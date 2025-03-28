@@ -18,7 +18,6 @@ void TCA9548A(uint8_t bus){
   Wire.beginTransmission(0x70);  // TCA9548A address
   Wire.write(1 << bus);          // send byte to select bus
   Wire.endTransmission();
-  // Serial.print(bus);
 }
 
 // Declare the AS5600 sensors, 0 is shoulder flex, 1 is elbow, 2 is shoulder rotation
@@ -27,23 +26,27 @@ MagneticSensorI2C sensor1 = MagneticSensorI2C(AS5600_I2C);
 MagneticSensorI2C sensor2 = MagneticSensorI2C(AS5600_I2C);
 
 // REPLACE WITH THE MAC Address of your receiver 84:fc:e6:7d:77:f8 (MotorGo Mini)
-uint8_t broadcastAddress1[] = {0x84, 0xFC, 0xE6, 0x7D, 0x77, 0xF8};
-uint8_t broadcastAddress2[] = {0x3C, 0x84, 0x27, 0x14, 0x0C, 0xC8};  // ESP32 OLED
+uint8_t broadcastAddress1[] = {0xA8, 0x42, 0xE3, 0xE4, 0x06, 0xA4}; // Arm MKS Dual FOC a8:42:e3:e4:06:a4
+uint8_t broadcastAddress2[] = {0xC4, 0xDE, 0xE2, 0xF5, 0x72, 0xC0};  // Shoulder MKS Dual FOC c4:de:e2:f5:72:c0
 
 // Variables to store the joint angles with corrections for the arm mechanics
 float ch0_angle_pulley;
 float ch1_angle_pulley;
 float ch2_angle_pulley;
 
-float ch0_old;
-float ch1_old;
-float ch2_old;
-
 float ch0_offset;
 float ch1_offset;
 float ch2_offset;
 
 int count = 0;
+
+bool pwr_bool = 0;
+
+// set swith pin numbers
+const int switchPin = 4;  // the number of the switch pin
+
+// variable for storing the switch status 
+int switchState = 0;
 
 // Structure example to receive data
 // Must match the sender structure
@@ -68,6 +71,9 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 void setup() {
   // Init Serial Monitor
   Serial.begin(115200);
+
+  // initialize the switch pin as an input
+  pinMode(switchPin, INPUT);
 
   // Set device as a Wi-Fi Station
   WiFi.mode(WIFI_STA);
@@ -127,6 +133,17 @@ void setup() {
 }
 
 void loop() {
+  // read the state of the switch value
+  switchState = digitalRead(switchPin);
+
+  // check if the switch is on
+  // if it is, the switchState is HIGH
+  if (switchState == LOW) {
+    pwr_bool = 1;
+  } else {
+    pwr_bool = 0;
+  }
+
   // iterative function updating the sensor internal variables
   // it is usually called in motor.loopFOC()
   // this function reads the sensor hardware and 
@@ -143,46 +160,50 @@ void loop() {
   Pulley ratio times sensor angle, negative if sensor direction is inverted,
     add offset for diff sensor positions
   */
-  ch0_angle_pulley = 4.667 * (sensor0.getAngle() - ch0_offset);
-  ch1_angle_pulley = -4.667 * (sensor1.getAngle() - ch1_offset);
-  ch2_angle_pulley = -2.727 * (sensor2.getAngle() - ch2_offset);
+  ch0_angle_pulley = sensor0.getAngle() - ch0_offset;
+  ch1_angle_pulley = sensor1.getAngle() - ch1_offset;
+  ch2_angle_pulley = sensor2.getAngle() - ch2_offset;
 
   // Set values to send
   myData.ch0_rad = ch0_angle_pulley;
   myData.ch1_rad = ch1_angle_pulley;
   myData.ch2_rad = ch2_angle_pulley;
   // power will allow turning on and off the motors, not setup yet
-  myData.power = true;
+  myData.power = pwr_bool;
 
   // Send message via ESP-NOW
   esp_err_t result = esp_now_send(0, (uint8_t *) &myData, sizeof(myData));
 
-  if (ch0_angle_pulley != ch0_old or ch1_angle_pulley != ch1_old or ch2_angle_pulley != ch2_old) {
-    if (count > 100) {
-      // Print data sent to terminal for debugging
-      Serial.println();
-      Serial.println("Sensor Measurements");
-      Serial.print(ch0_angle_pulley); 
-      Serial.print(" : "); 
-      Serial.print(ch1_angle_pulley);
-      Serial.print(" : "); 
-      Serial.print(ch2_angle_pulley);
-      Serial.println();
-      count = 0;
-      if (result == ESP_OK) {
-        Serial.println("Sent with success");
-      }
-      else {
-        Serial.println("Error sending the data");
-      }
+  // Print data sent to terminal for debugging
+  Serial.println();
+  Serial.println("Sensor Measurements");
+  Serial.print(ch0_angle_pulley * (180/3.14)); 
+  Serial.print(" : "); 
+  Serial.print(ch1_angle_pulley * (180/3.14));
+  Serial.print(" : "); 
+  Serial.print(ch2_angle_pulley * (180/3.14));
+  Serial.println();
+
+  /*
+  Serial.println();
+  Serial.println("Sensor Measurements");
+  Serial.print(sensor0.getVelocity()); 
+  Serial.print(" : "); 
+  Serial.print(sensor1.getVelocity());
+  Serial.print(" : "); 
+  Serial.print(sensor2.getVelocity());
+  Serial.println();
+  */
+
+
+  if (result == ESP_OK) {
+    Serial.println("Sent with success");
     }
+    else {
+    Serial.println("Error sending the data");
   }
 
-  ch0_old = ch0_angle_pulley;
-  ch1_old = ch1_angle_pulley;
-  ch2_old = ch2_angle_pulley;
 
-  count++;
 
   // Delay to prevent overwhelming the rx
   delay(100);
