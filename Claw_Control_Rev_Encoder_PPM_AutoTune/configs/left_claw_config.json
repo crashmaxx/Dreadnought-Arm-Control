@@ -1,0 +1,21 @@
+{
+  "board_name": "Left_Claw",
+  "firmware_version": "AutoTune_v1.0",
+  "config_version": 2,
+  "timestamp": 12345678,
+  "pid": {
+    "Kp": 1.200,
+    "Ki": 0.050,
+    "Kd": 0.150
+  },
+  "settings": {
+    "channel_number": 4,
+    "min_angle": 0,
+    "max_angle": 359
+  },
+  "hardware": {
+    "encoder_ppr": 2048,
+    "pwm_min": 1,
+    "pwm_max": 1060
+  }
+}

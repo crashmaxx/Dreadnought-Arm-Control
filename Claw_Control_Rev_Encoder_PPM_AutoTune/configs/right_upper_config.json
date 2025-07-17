@@ -1,0 +1,21 @@
+{
+  "board_name": "Right_Upper",
+  "firmware_version": "AutoTune_v1.0",
+  "config_version": 2,
+  "timestamp": 12345678,
+  "pid": {
+    "Kp": 0.800,
+    "Ki": 0.020,
+    "Kd": 0.100
+  },
+  "settings": {
+    "channel_number": 2,
+    "min_angle": 0,
+    "max_angle": 359
+  },
+  "hardware": {
+    "encoder_ppr": 2048,
+    "pwm_min": 1,
+    "pwm_max": 1060
+  }
+}
