@@ -26,14 +26,15 @@ Compile and upload to your ESP32 board.
 
 #### Channel Controls (via RC transmitter):
 - **Channel 5**: Arm/Disarm system (>1700µs)
-- **Channel 6**: Start/Stop AutoTune (>1700µs)
-- **Channel 7**: Save config to EEPROM (>1700µs)
-- **Channel 8**: Load config from EEPROM (>1700µs)
 
 #### Serial Commands (via Serial Monitor):
 - `export` - Export current configuration as JSON
 - `import` - Import configuration from JSON
 - `status` - Show current configuration
+- `autotune` - Start/Stop PID AutoTune
+- `save` - Save current config to EEPROM
+- `load` - Load config from EEPROM
+- `debug` - Toggle debug output on/off
 
 ## Configuration Workflow
 
@@ -41,7 +42,7 @@ Compile and upload to your ESP32 board.
 
 1. **Select Configuration**: Edit `board_config.h` for your board type
 2. **Upload Firmware**: Flash to ESP32
-3. **Run AutoTune**: Use Channel 6 to auto-tune PID parameters
+3. **Run AutoTune**: Type `autotune` in Serial Monitor to auto-tune PID parameters
 4. **Export Config**: Type `export` in Serial Monitor
 5. **Save JSON**: Copy the JSON output to `configs/your_board_config.json`
 
@@ -51,7 +52,7 @@ Compile and upload to your ESP32 board.
    - Type `import` in Serial Monitor
    - Paste your saved JSON configuration
    - Press Enter
-2. **Or Load from EEPROM**: Use Channel 8 if config is already saved
+2. **Or Load from EEPROM**: Type `load` in Serial Monitor if config is already saved
 
 ## Pre-configured Boards
 
@@ -83,11 +84,12 @@ Example configurations are provided in the `configs/` folder:
 
 ## AutoTune Process
 
-1. Set your RC transmitter Channel 6 high (>1700µs)
+1. Type `autotune` in the Serial Monitor to start AutoTune
 2. The system will automatically oscillate around the setpoint
 3. Monitor Serial output for progress
 4. AutoTune completes automatically (or times out after 5 minutes)
-5. New PID parameters are automatically saved to EEPROM
+5. Type `autotune` again to stop early if needed
+6. New PID parameters are automatically saved to EEPROM
 
 ## JSON Configuration Format
 

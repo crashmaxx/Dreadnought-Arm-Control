@@ -63,6 +63,9 @@ bool tuningComplete = false;
 unsigned long tuneStartTime = 0;
 PID_ATune aTune(&pos_deg, &pid_output);
 
+// Debug output control
+bool debugEnabled = false;
+
 // ------------------- Hardware Objects -------------------
 Servo vescPPM; // VESC PPM output
 
@@ -294,6 +297,21 @@ void handleSerialCommands() {
       exportConfigJSON();
     } else if (command == "import") {
       importConfigJSON();
+    } else if (command == "autotune") {
+      if (autoTuneEnabled) {
+        stopAutoTune();
+      } else {
+        startAutoTune();
+      }
+    } else if (command == "save") {
+      saveConfig();
+    } else if (command == "load") {
+      if (loadConfig()) {
+        myPID.SetTunings(Kp, Ki, Kd);
+      }
+    } else if (command == "debug") {
+      debugEnabled = !debugEnabled;
+      Serial.printf("Debug output %s\n", debugEnabled ? "ENABLED" : "DISABLED");
     } else if (command == "status") {
       Serial.println("=== CURRENT CONFIGURATION ===");
       Serial.printf("Board: %s\n", board_name.c_str());
@@ -303,8 +321,13 @@ void handleSerialCommands() {
       Serial.printf("Current Position: %.1f degrees\n", pos_deg);
       Serial.printf("Target Position: %.1f degrees\n", target_deg);
       Serial.printf("AutoTune: %s\n", autoTuneEnabled ? "RUNNING" : "STOPPED");
+      Serial.printf("Debug Output: %s\n", debugEnabled ? "ENABLED" : "DISABLED");
     } else if (command.length() > 0) {
       Serial.println("Unknown command. Available commands:");
+      Serial.println("  autotune - Start/Stop PID AutoTune");
+      Serial.println("  save - Save config to EEPROM");
+      Serial.println("  load - Load config from EEPROM");
+      Serial.println("  debug - Toggle debug output on/off");
       Serial.println("  export - Export config to JSON");
       Serial.println("  import - Import config from JSON");
       Serial.println("  status - Show current configuration");
@@ -360,11 +383,11 @@ void setup() {
   Serial.print("PWM Sensor initialized. Angle: ");
   Serial.println(pos_deg_PWM);
   
-  Serial.println("Setup complete. Commands:");
-  Serial.println("  Channel 6 > 1700: Start AutoTune");
-  Serial.println("  Channel 7 > 1700: Save Config");
-  Serial.println("  Channel 8 > 1700: Load Config");
-  Serial.println("Serial Commands:");
+  Serial.println("Setup complete. Serial Commands:");
+  Serial.println("  'autotune' - Start/Stop PID AutoTune");
+  Serial.println("  'save' - Save config to EEPROM");
+  Serial.println("  'load' - Load config from EEPROM");
+  Serial.println("  'debug' - Toggle debug output on/off");
   Serial.println("  'export' - Export config to JSON");
   Serial.println("  'import' - Import config from JSON");
   Serial.println("  'status' - Show current configuration");
@@ -414,50 +437,9 @@ void loop() {
     myPID.Compute();
   }
 
-  // Read control channels
+  // Read arming channel
   int armswitch = crsf.getChannel(5);
-  int autotuneswitch = crsf.getChannel(6);
-  int saveswitch = crsf.getChannel(7);
-  int loadswitch = crsf.getChannel(8);
   
-  // Handle channel commands (with debouncing)
-  static bool lastAutotuneState = false;
-  static bool lastSaveState = false;
-  static bool lastLoadState = false;
-  static unsigned long lastCommandTime = 0;
-  unsigned long now = millis();
-  
-  if (now - lastCommandTime > 1000) { // 1 second debounce
-    // AutoTune control (Channel 6)
-    bool autotuneActive = autotuneswitch >= 1700;
-    if (autotuneActive && !lastAutotuneState && !autoTuneEnabled) {
-      startAutoTune();
-      lastCommandTime = now;
-    } else if (!autotuneActive && lastAutotuneState && autoTuneEnabled) {
-      stopAutoTune();
-      lastCommandTime = now;
-    }
-    lastAutotuneState = autotuneActive;
-    
-    // Save config (Channel 7)
-    bool saveActive = saveswitch >= 1700;
-    if (saveActive && !lastSaveState) {
-      saveConfig();
-      lastCommandTime = now;
-    }
-    lastSaveState = saveActive;
-    
-    // Load config (Channel 8)
-    bool loadActive = loadswitch >= 1700;
-    if (loadActive && !lastLoadState) {
-      if (loadConfig()) {
-        myPID.SetTunings(Kp, Ki, Kd);
-      }
-      lastCommandTime = now;
-    }
-    lastLoadState = loadActive;
-  }
-
   // Calculate PPM output for VESC
   int ppm_out;
   if (armswitch >= 1700) { // Channel 5 armed
@@ -469,10 +451,11 @@ void loop() {
   }
   vescPPM.writeMicroseconds(ppm_out);
 
-  // Print debug info every second
+  // Print debug info every second (only if debug is enabled)
   // This is non-blocking and uses millis() to avoid delays
   static unsigned long lastPrint = 0;
-  if (now - lastPrint >= 1000) {
+  unsigned long now = millis();
+  if (debugEnabled && now - lastPrint >= 1000) {
     Serial.print("Board: ");
     Serial.print(board_name);
     Serial.print(", Channel: ");
