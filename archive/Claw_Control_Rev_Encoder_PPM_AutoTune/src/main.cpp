@@ -1,14 +1,17 @@
 #include "shared_globals.h"
 #include "esp_now_telemetry.h"
+#include "config_manager.h"
 #include "pid_autotune.h"
 #include "encoder_handler.h"
 #include "serial_commands.h"
 #include "manual_tuning.h"
+#include "smart_tuning.h"
 
 // ------------------- Global Variable Definitions -------------------
+Config config;
 
 // PID tuning parameters (use board config defaults)
-float Kp = DEFAULT_KP, Ki = DEFAULT_KI, Kd = DEFAULT_KD;
+double Kp = DEFAULT_KP, Ki = DEFAULT_KI, Kd = DEFAULT_KD;
 
 // Board configuration
 String board_name = BOARD_NAME;
@@ -16,17 +19,19 @@ String board_name = BOARD_NAME;
 // Encoder angles and positions
 float angleAB = 0;        // Quadrature encoder angle (radians)
 float anglePWM = 0;       // PWM sensor angle (radians)
-float pos_deg = 0;        // Combined position (degrees)
-float pos_deg_PWM = 0;    // PWM sensor position (degrees)
+double pos_deg = 0;       // Combined position (degrees)
+double pos_deg_PWM = 0;   // PWM sensor position (degrees)
 
-float target_deg = 0;     // Target position (degrees)
-float pid_output = 0;     // PID output
+double target_deg = 0;    // Target position (degrees)
+double pid_output = 0;    // PID output
 
 // AutoTune variables
 bool autoTuneEnabled = false;
 bool tuningComplete = false;
 bool waitingForArm = false;
 unsigned long tuneStartTime = 0;
+double autoTuneOutput = 0;  // Separate AutoTune output
+PID_ATune aTune(&pos_deg, &autoTuneOutput);
 
 // Debug output control
 bool debugEnabled = false;
@@ -48,15 +53,21 @@ AlfredoCRSF crsf;
 const uint8_t peer_addr[6] = PEER_MAC;
 
 // ------------------- PID Controller -------------------
-QuickPID myPID(&pos_deg, &pid_output, &target_deg);
-
-// sTune autotuner for QuickPID
-sTune tuner = sTune(&pos_deg, &pid_output, tuner.ZN_PID, tuner.directIP, tuner.printOFF);
+PID myPID(&pos_deg, &pid_output, &target_deg, Kp, Ki, Kd, DIRECT);
 
 // ------------------- Setup -------------------
 void setup() {
   Serial.begin(115200);
   
+  // Initialize EEPROM
+  EEPROM.begin(EEPROM_SIZE);
+  
+  // Load configuration from EEPROM
+  if (!loadConfig()) {
+    // Save default configuration if loading failed
+    saveConfig();
+  }
+
   // Initialize encoders
   initializeEncoders();
 
@@ -70,18 +81,23 @@ void setup() {
   vescPPM.attach(VESC_PPM_PIN);
   vescPPM.setPeriodHertz(50);
 
-  // Initialize PID with board config defaults
+  // Initialize PID with loaded parameters
   myPID.SetTunings(Kp, Ki, Kd);
-  myPID.SetMode(1);  // 1 = AUTOMATIC mode in QuickPID
+  myPID.SetMode(AUTOMATIC);
   myPID.SetOutputLimits(-500, 500);
 
   // Initialize ESP-NOW telemetry
   setTelemetryPeer(peer_addr);
   
   Serial.println("Setup complete. Serial Commands:");
-  Serial.println("  'autotune' - Start/Stop sTune AutoTune");
+  Serial.println("  'autotune' - Start/Stop PID AutoTune");
+  Serial.println("  'smart' - Start smart automated tuning");
   Serial.println("  'manual' - Start manual step-response tuning");
+  Serial.println("  'save' - Save config to EEPROM");
+  Serial.println("  'load' - Load config from EEPROM");
   Serial.println("  'debug' - Toggle debug output on/off");
+  Serial.println("  'export' - Export config to JSON");
+  Serial.println("  'import' - Import config from JSON");
   Serial.println("  'status' - Show current configuration");
   Serial.printf("Board: %s, Channel: %d\n", board_name.c_str(), CONTROL_CHANNEL);
 }
@@ -98,15 +114,18 @@ void loop() {
   crsf.update();
 
   // Map channel (1000-2000us) to servo range (only when not autotuning or manual tuning)
-  if (!autoTuneEnabled && !manualTuningEnabled) {
+  if (!autoTuneEnabled && !manualTuningEnabled && !smartTuningEnabled) {
     int target_ppm = crsf.getChannel(CONTROL_CHANNEL);
-    target_deg = (float)map(target_ppm, 1000, 2000, min_deg, max_deg);
+    target_deg = map(target_ppm, 1000, 2000, min_deg, max_deg);
     if (target_deg < min_deg) target_deg = min_deg;
     if (target_deg > max_deg) target_deg = max_deg;
   }
 
   // Handle AutoTune or normal PID operation
   handleAutoTune();
+  
+  // Handle smart tuning
+  handleSmartTuning();
 
   // Always run PID to chase the target (whether set by RC or AutoTune)
   myPID.Compute();

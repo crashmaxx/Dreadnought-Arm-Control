@@ -18,7 +18,6 @@ void saveConfig() {
   config.Kd = Kd;
   strncpy(config.board_name, board_name.c_str(), sizeof(config.board_name) - 1);
   config.board_name[sizeof(config.board_name) - 1] = '\0';
-  config.channel_number = channel_number;
   config.min_angle = min_deg;
   config.max_angle = max_deg;
   config.checksum = calculateChecksum(&config);
@@ -44,7 +43,6 @@ bool loadConfig() {
   Ki = config.Ki;
   Kd = config.Kd;
   board_name = String(config.board_name);
-  channel_number = config.channel_number;
   
   Serial.println("Configuration loaded from EEPROM");
   Serial.printf("Kp: %.3f, Ki: %.3f, Kd: %.3f\n", Kp, Ki, Kd);
@@ -66,7 +64,6 @@ void exportConfigJSON() {
   pid["Kd"] = Kd;
   
   JsonObject settings = doc["settings"];
-  settings["channel_number"] = channel_number;
   settings["min_angle"] = min_deg;
   settings["max_angle"] = max_deg;
   
@@ -117,18 +114,17 @@ void importConfigJSON() {
   }
   
   // Import values
-  if (doc.containsKey("pid")) {
-    if (doc["pid"].containsKey("Kp")) Kp = doc["pid"]["Kp"];
-    if (doc["pid"].containsKey("Ki")) Ki = doc["pid"]["Ki"];
-    if (doc["pid"].containsKey("Kd")) Kd = doc["pid"]["Kd"];
+  if (doc["pid"].is<JsonObject>()) {
+    if (!doc["pid"]["Kp"].isNull()) Kp = doc["pid"]["Kp"];
+    if (!doc["pid"]["Ki"].isNull()) Ki = doc["pid"]["Ki"];
+    if (!doc["pid"]["Kd"].isNull()) Kd = doc["pid"]["Kd"];
   }
   
-  if (doc.containsKey("settings")) {
-    if (doc["settings"].containsKey("channel_number")) 
-      channel_number = doc["settings"]["channel_number"];
+  if (doc["settings"].is<JsonObject>()) {
+    // Settings section exists but channel_number now comes from board_config.h
   }
   
-  if (doc.containsKey("board_name")) {
+  if (!doc["board_name"].isNull()) {
     board_name = doc["board_name"].as<String>();
   }
   

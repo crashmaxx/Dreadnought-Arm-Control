@@ -4,9 +4,9 @@
   "config_version": 2,
   "timestamp": 12345678,
   "pid": {
-    "Kp": 1.000,
-    "Ki": 0.030,
-    "Kd": 0.120
+    "Kp": 0.100,
+    "Ki": 0.008,
+    "Kd": 0.099
   },
   "settings": {
     "channel_number": 3,
