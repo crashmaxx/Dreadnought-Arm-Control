@@ -50,6 +50,10 @@ static void crsf_control_task(void *pvParameters) {
     uint32_t last_encoder_print = 0;
     uint32_t last_telemetry_send = 0;
     
+    // VESC position control variables
+    float vesc_current_position = 0.0f;
+    bool vesc_position_valid = false;
+    
     while (1) {
         // Update CRSF receiver
         crsf_update();
@@ -58,6 +62,18 @@ static void crsf_control_task(void *pvParameters) {
         encoder_update();
         
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        
+        // Request VESC position every 50ms for responsive control
+        // VESC sends status messages automatically - we just check if we have recent data
+        can_status_msg_4 *vesc_status = comm_can_get_status_msg_4_id(CRSF_VESC_CONTROLLER_ID);
+        if (vesc_status && (current_time - vesc_status->rx_time) < 100) {
+            // We have recent VESC position data (within 100ms)
+            vesc_current_position = vesc_status->pid_pos_now;
+            vesc_position_valid = true;
+        } else {
+            // No recent VESC position data available
+            vesc_position_valid = false;
+        }
         
         // Send telemetry data
         if (esp_now_telemetry_is_ready() && (current_time - last_telemetry_send > ESP_NOW_TELEMETRY_RATE_MS)) {
@@ -96,7 +112,7 @@ static void crsf_control_task(void *pvParameters) {
                              encoder_get_angle_deg(), encoder_get_angle_rad(),
                              encoder_get_velocity_deg_s(), encoder_get_type_name());
                 } else {
-                    ESP_LOGW(TAG, "Encoder: INVALID (errors: %d)", encoder_get_error_count());
+                    ESP_LOGW(TAG, "Encoder: INVALID (errors: %lu)", encoder_get_error_count());
                 }
                 last_encoder_print = current_time;
             }
@@ -115,19 +131,36 @@ static void crsf_control_task(void *pvParameters) {
             if (crsf_is_connected() && !crsf_is_failsafe()) {
                 // Check if armed using utility function
                 if (crsf_is_armed()) {
-                    // Example: Use throttle channel for direct current control
-                    float throttle_normalized = crsf_channel_to_normalized(CRSF_THROTTLE_CHANNEL);
-                    float current_command = throttle_normalized * CRSF_MAX_CURRENT_AMPS;
-                    
-                    // Optional: Add encoder-based position or velocity control here
-                    // For position control:
-                    // float target_angle = crsf_channel_to_normalized(CRSF_POSITION_CHANNEL) * 360.0f;
-                    // float position_error = target_angle - encoder_get_angle_deg();
-                    // float pid_output = pid_controller(position_error);
-                    // current_command = pid_output;
-                    
-                    // Send current command to VESC via CAN
-                    comm_can_set_current(CRSF_VESC_CONTROLLER_ID, current_command);
+                    // Position control logic
+                    // Only proceed with position control if we have valid VESC position
+                    if (vesc_position_valid) {
+                        // Convert CRSF channel to target angle (using channel 1 for position control)
+                        // CRSF channels are normalized 0.0 to 1.0, convert to -180 to +180 degrees
+                        float crsf_target_degrees = (crsf_channel_to_normalized(1) - 0.5f) * 360.0f;
+                        
+                        // Get current encoder position in degrees
+                        float encoder_degrees = encoder_get_angle_deg();
+                        
+                        // Calculate position error (CRSF target - encoder position)
+                        float position_error = crsf_target_degrees - encoder_degrees;
+                        
+                        // Apply gear ratio compensation
+                        float gear_compensated_error = position_error * GEAR_RATIO;
+                        
+                        // Calculate new target position for VESC
+                        float vesc_target_position = vesc_current_position + gear_compensated_error;
+                        
+                        // Send position command to VESC
+                        comm_can_set_pos(CRSF_VESC_CONTROLLER_ID, vesc_target_position);
+                        
+                        ESP_LOGI(TAG, "Position Control - CRSF: %.1f°, Encoder: %.1f°, Error: %.1f°, VESC Target: %.1f°", 
+                                crsf_target_degrees, encoder_degrees, position_error, vesc_target_position);
+                    } else {
+                        // No valid VESC position - fallback to current control
+                        float throttle_normalized = crsf_channel_to_normalized(CRSF_THROTTLE_CHANNEL);
+                        float current_command = throttle_normalized * CRSF_MAX_CURRENT_AMPS;
+                        comm_can_set_current(CRSF_VESC_CONTROLLER_ID, current_command);
+                    }
                 } else {
                     // Disarmed - send zero current
                     comm_can_set_current(CRSF_VESC_CONTROLLER_ID, 0.0f);
@@ -149,7 +182,7 @@ static void crsf_control_task(void *pvParameters) {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting VESC Express Encoder CRSF Control");
     ESP_LOGI(TAG, "Board: %s", BOARD_NAME);
-    ESP_LOGI(TAG, "Encoder Type: %s", encoder_get_type_name_static());
+    ESP_LOGI(TAG, "Encoder Type: %s", encoder_get_type_name());
     
     // Initialize CAN communication
     #ifdef CAN_TX_GPIO_NUM

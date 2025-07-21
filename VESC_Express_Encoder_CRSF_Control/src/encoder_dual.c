@@ -22,13 +22,13 @@
 #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
 
 #include "driver/gpio.h"
-#include "driver/pcnt.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_attr.h"
 
 static const char *TAG = "DUAL_ENCODER";
 
-// Dual encoder state combining PWM magnetic sensor and quadrature encoder
+// Dual encoder state combining PWM magnetic sensor and quadrature encoder  
 typedef struct {
     // PWM sensor data
     float pwm_angle_rad;
@@ -39,14 +39,16 @@ typedef struct {
     bool pwm_valid;
     uint32_t pwm_error_count;
     
-    // Quadrature encoder data
+    // Quadrature encoder data (GPIO-based for simplicity)
     float quad_angle_rad;
     float quad_angle_deg;
     int32_t quad_pulse_count;
-    int32_t quad_last_pulse_count;
+    volatile int32_t quad_count;
     float quad_radians_per_pulse;
     bool quad_valid;
     uint32_t quad_error_count;
+    uint8_t last_a_state;
+    uint8_t last_b_state;
     
     // Combined output
     float combined_angle_rad;
@@ -65,9 +67,6 @@ typedef struct {
 
 static dual_encoder_state_t dual_state = {0};
 
-#define PCNT_UNIT PCNT_UNIT_0
-#define PCNT_H_LIM_VAL 32767
-#define PCNT_L_LIM_VAL -32768
 #define PWM_TIMEOUT_US 100000
 #define PWM_MIN_PULSE_US 500
 #define PWM_MAX_PULSE_US 2500
@@ -97,18 +96,52 @@ static void IRAM_ATTR pwm_gpio_isr_handler(void* arg) {
     }
 }
 
-// PCNT overflow/underflow handler
-static void IRAM_ATTR pcnt_intr_handler(void *arg) {
-    uint32_t intr_status = PCNT.int_st.val;
+// Quadrature encoder GPIO interrupt handlers
+static void IRAM_ATTR quad_a_gpio_isr_handler(void* arg) {
+    uint8_t a_state = gpio_get_level(ENCODER_A_PIN);
+    uint8_t b_state = gpio_get_level(ENCODER_B_PIN);
     
-    if (intr_status & (BIT(PCNT_UNIT))) {
-        if (PCNT.status_unit[PCNT_UNIT].h_lim_lat) {
-            dual_state.quad_pulse_count += PCNT_H_LIM_VAL;
+    if (a_state != dual_state.last_a_state) {
+        if (a_state) {
+            // Rising edge on A
+            if (b_state) {
+                dual_state.quad_count--;
+            } else {
+                dual_state.quad_count++;
+            }
+        } else {
+            // Falling edge on A
+            if (b_state) {
+                dual_state.quad_count++;
+            } else {
+                dual_state.quad_count--;
+            }
         }
-        if (PCNT.status_unit[PCNT_UNIT].l_lim_lat) {
-            dual_state.quad_pulse_count += PCNT_L_LIM_VAL;
+        dual_state.last_a_state = a_state;
+    }
+}
+
+static void IRAM_ATTR quad_b_gpio_isr_handler(void* arg) {
+    uint8_t a_state = gpio_get_level(ENCODER_A_PIN);
+    uint8_t b_state = gpio_get_level(ENCODER_B_PIN);
+    
+    if (b_state != dual_state.last_b_state) {
+        if (b_state) {
+            // Rising edge on B
+            if (a_state) {
+                dual_state.quad_count++;
+            } else {
+                dual_state.quad_count--;
+            }
+        } else {
+            // Falling edge on B  
+            if (a_state) {
+                dual_state.quad_count--;
+            } else {
+                dual_state.quad_count++;
+            }
         }
-        PCNT.int_clr.val = BIT(PCNT_UNIT);
+        dual_state.last_b_state = b_state;
     }
 }
 
@@ -146,89 +179,56 @@ static bool dual_encoder_init(void) {
         return false;
     }
     
-    // Initialize quadrature encoder
+    // Initialize quadrature encoder with GPIO interrupts
     dual_state.quad_radians_per_pulse = (2.0f * M_PI) / (ENCODER_PPR * 4.0f);
     
-    pcnt_config_t pcnt_config = {
-        .pulse_gpio_num = ENCODER_A_PIN,
-        .ctrl_gpio_num = ENCODER_B_PIN,
-        .channel = PCNT_CHANNEL_0,
-        .unit = PCNT_UNIT,
-        .pos_mode = PCNT_COUNT_INC,
-        .neg_mode = PCNT_COUNT_DIS,
-        .lctrl_mode = PCNT_MODE_REVERSE,
-        .hctrl_mode = PCNT_MODE_KEEP,
-        .counter_h_lim = PCNT_H_LIM_VAL,
-        .counter_l_lim = PCNT_L_LIM_VAL,
+    // Configure quadrature A pin
+    gpio_config_t quad_a_conf = {
+        .pin_bit_mask = (1ULL << ENCODER_A_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE
     };
     
-    ret = pcnt_unit_config(&pcnt_config);
+    ret = gpio_config(&quad_a_conf);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT unit config failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Quad A GPIO config failed: %s", esp_err_to_name(ret));
         return false;
     }
     
-    // Configure second PCNT channel for quadrature
-    pcnt_config.pulse_gpio_num = ENCODER_B_PIN;
-    pcnt_config.ctrl_gpio_num = ENCODER_A_PIN;
-    pcnt_config.channel = PCNT_CHANNEL_1;
-    pcnt_config.pos_mode = PCNT_COUNT_DEC;
-    pcnt_config.lctrl_mode = PCNT_MODE_KEEP;
-    pcnt_config.hctrl_mode = PCNT_MODE_REVERSE;
+    // Configure quadrature B pin
+    gpio_config_t quad_b_conf = {
+        .pin_bit_mask = (1ULL << ENCODER_B_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE
+    };
     
-    ret = pcnt_unit_config(&pcnt_config);
+    ret = gpio_config(&quad_b_conf);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT channel 1 config failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Quad B GPIO config failed: %s", esp_err_to_name(ret));
         return false;
     }
     
-    // Set GPIO pull-ups for quadrature
-    gpio_set_pull_mode(ENCODER_A_PIN, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(ENCODER_B_PIN, GPIO_PULLUP_ONLY);
-    
-    // Set up PCNT interrupts
-    ret = pcnt_event_enable(PCNT_UNIT, PCNT_EVT_H_LIM);
+    // Add quadrature ISR handlers
+    ret = gpio_isr_handler_add(ENCODER_A_PIN, quad_a_gpio_isr_handler, NULL);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT enable H_LIM event failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Quad A GPIO ISR handler add failed: %s", esp_err_to_name(ret));
         return false;
     }
     
-    ret = pcnt_event_enable(PCNT_UNIT, PCNT_EVT_L_LIM);
+    ret = gpio_isr_handler_add(ENCODER_B_PIN, quad_b_gpio_isr_handler, NULL);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT enable L_LIM event failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Quad B GPIO ISR handler add failed: %s", esp_err_to_name(ret));
         return false;
     }
     
-    ret = pcnt_isr_register(pcnt_intr_handler, NULL, 0, NULL);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT ISR register failed: %s", esp_err_to_name(ret));
-        return false;
-    }
-    
-    ret = pcnt_intr_enable(PCNT_UNIT);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT interrupt enable failed: %s", esp_err_to_name(ret));
-        return false;
-    }
-    
-    // Start PCNT
-    ret = pcnt_counter_pause(PCNT_UNIT);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT counter pause failed: %s", esp_err_to_name(ret));
-        return false;
-    }
-    
-    ret = pcnt_counter_clear(PCNT_UNIT);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT counter clear failed: %s", esp_err_to_name(ret));
-        return false;
-    }
-    
-    ret = pcnt_counter_resume(PCNT_UNIT);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCNT counter resume failed: %s", esp_err_to_name(ret));
-        return false;
-    }
+    // Initialize GPIO states
+    dual_state.last_a_state = gpio_get_level(ENCODER_A_PIN);
+    dual_state.last_b_state = gpio_get_level(ENCODER_B_PIN);
+    dual_state.quad_count = 0;
     
     // Initialize state
     dual_state.pwm_valid = false;
@@ -268,16 +268,10 @@ static bool dual_encoder_update(void) {
     }
     
     // Update quadrature encoder
-    int16_t pcnt_count;
-    esp_err_t ret = pcnt_get_counter_value(PCNT_UNIT, &pcnt_count);
-    if (ret == ESP_OK) {
-        int32_t total_count = dual_state.quad_pulse_count + pcnt_count;
-        dual_state.quad_angle_rad = total_count * dual_state.quad_radians_per_pulse;
-        dual_state.quad_angle_deg = encoder_rad_to_deg(dual_state.quad_angle_rad);
-        updated = true;
-    } else {
-        dual_state.quad_error_count++;
-    }
+    int32_t current_count = dual_state.quad_count;
+    dual_state.quad_angle_rad = current_count * dual_state.quad_radians_per_pulse;
+    dual_state.quad_angle_deg = encoder_rad_to_deg(dual_state.quad_angle_rad);
+    updated = true;
     
     if (updated) {
         // Initialize offset between PWM and quadrature (like in Claw_Control)

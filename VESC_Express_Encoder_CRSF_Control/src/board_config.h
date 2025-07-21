@@ -23,7 +23,7 @@
 // ================= BOARD CONFIGURATION SELECTOR =================
 // Uncomment ONE of the following lines to select your board configuration
 
-//#define BOARD_LEFT_CLAW
+#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
 //#define BOARD_LEFT_ELBOW
 //#define BOARD_RIGHT_ELBOW
@@ -31,7 +31,7 @@
 //#define BOARD_RIGHT_UPPER
 //#define BOARD_LEFT_SHOULDER
 //#define BOARD_RIGHT_SHOULDER
-#define BOARD_VESC_EXPRESS_DEFAULT
+//#define BOARD_VESC_EXPRESS_DEFAULT
 //#define BOARD_VESC_EXPRESS_QUAD
 //#define BOARD_VESC_EXPRESS_DUAL
 //#define BOARD_CUSTOM
@@ -190,13 +190,19 @@
 
 #ifdef BOARD_LEFT_SHOULDER
   #define BOARD_NAME "Left_Shoulder"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
   #define ENCODER_PWM_PIN 4
   #define ENCODER_A_PIN 5
   #define ENCODER_B_PIN 6
   #define ENCODER_PPR 1024
   #define ENCODER_PWM_MIN_US 500
   #define ENCODER_PWM_MAX_US 2500
+  
+  // SPI pins for magnetic encoder
+  #define ENCODER_SPI_CS_PIN 7
+  #define ENCODER_SPI_MISO_PIN 8
+  #define ENCODER_SPI_MOSI_PIN 9
+  #define ENCODER_SPI_CLK_PIN 10
   
   // Control parameters for shoulder joint
   #define CONTROL_CHANNEL 1
@@ -213,13 +219,19 @@
 
 #ifdef BOARD_RIGHT_SHOULDER
   #define BOARD_NAME "Right_Shoulder"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
   #define ENCODER_PWM_PIN 4
   #define ENCODER_A_PIN 5
   #define ENCODER_B_PIN 6
   #define ENCODER_PPR 1024
   #define ENCODER_PWM_MIN_US 500
   #define ENCODER_PWM_MAX_US 2500
+  
+  // SPI pins for magnetic encoder
+  #define ENCODER_SPI_CS_PIN 7
+  #define ENCODER_SPI_MISO_PIN 8
+  #define ENCODER_SPI_MOSI_PIN 9
+  #define ENCODER_SPI_CLK_PIN 10
   
   // Control parameters for shoulder joint
   #define CONTROL_CHANNEL 1

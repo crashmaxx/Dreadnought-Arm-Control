@@ -42,7 +42,6 @@
 // Control Configuration
 #define CRSF_CONTROL_UPDATE_RATE_HZ 100             // Control loop update rate
 #define CRSF_DEBUG_PRINT_RATE_MS    500             // Debug print interval
-#define CRSF_MAX_CURRENT_AMPS       50.0f           // Maximum current command in amperes
 #define CRSF_ARM_CHANNEL            CRSF_CHANNEL_AUX1  // Channel used for arming
 #define CRSF_ARM_THRESHOLD          1700            // PWM threshold for armed state
 
@@ -55,6 +54,7 @@
 #define CRSF_FAILSAFE_CURRENT       0.0f            // Current to send on failsafe
 #define CRSF_FAILSAFE_ENABLE_BRAKE  true            // Enable brake on failsafe
 #define CRSF_FAILSAFE_BRAKE_CURRENT 5.0f            // Brake current on failsafe
+#define CRSF_MAX_CURRENT_AMPS       10.0f           // Maximum current limit for safety
 
 // CAN Configuration
 #define CRSF_VESC_CONTROLLER_ID     0               // Target VESC controller ID
@@ -74,10 +74,6 @@
 // Validation Macros
 #if CRSF_CONTROL_UPDATE_RATE_HZ > 1000
     #error "CRSF_CONTROL_UPDATE_RATE_HZ too high"
-#endif
-
-#if CRSF_MAX_CURRENT_AMPS <= 0
-    #error "CRSF_MAX_CURRENT_AMPS must be positive"
 #endif
 
 #if CRSF_CONNECTION_TIMEOUT_MS < 100

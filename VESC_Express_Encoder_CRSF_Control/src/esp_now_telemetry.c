@@ -28,6 +28,10 @@
 #include "freertos/semphr.h"
 #include <string.h>
 
+// MAC address formatting macros
+#define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
+#define MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
+
 static const char *TAG = "ESP_NOW_TELEMETRY";
 
 // ESP-NOW telemetry state
@@ -62,7 +66,7 @@ static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t statu
 }
 
 // ESP-NOW receive callback
-static void esp_now_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len) {
+static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
     if (len == sizeof(esp_now_telemetry_packet_t) && telemetry_state.recv_callback) {
         if (xSemaphoreTake(telemetry_state.mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             telemetry_state.recv_count++;
@@ -70,7 +74,7 @@ static void esp_now_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int le
         }
         
         // Call user callback
-        telemetry_state.recv_callback((const esp_now_telemetry_packet_t*)data, mac_addr, len);
+        telemetry_state.recv_callback((const esp_now_telemetry_packet_t*)data, recv_info->src_addr, len);
     }
 }
 

@@ -22,8 +22,10 @@
 
 // ================= ESP-NOW TELEMETRY CONFIGURATION =================
 
-// Enable/disable ESP-NOW telemetry
+// Enable/disable ESP-NOW telemetry (defined in board_config.h)
+#ifndef ESP_NOW_TELEMETRY_ENABLE
 #define ESP_NOW_TELEMETRY_ENABLE    1
+#endif
 
 // Default WiFi channel for ESP-NOW (1-14, 0 = use current)
 #define ESP_NOW_WIFI_CHANNEL        1
