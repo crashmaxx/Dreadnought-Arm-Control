@@ -25,15 +25,19 @@
 #include "driver/twai.h"
 #include "comm_can.h"
 #include "datatypes.h"
+#include "conf_general.h"
 #include "main.h"
 #include "crc.h"
 #include "packet.h"
+#include "commands.h"
+//#include "nmea.h"
+//#include "ublox.h"
+//#include "lispif.h"
+//#include "bms.h"
 #include "utils.h"
 #include "soc/gpio_sig_map.h"
 
 #include <string.h>
-
-// Stub functions removed - dependencies not needed for this project
 
 // Status messages
 static can_status_msg stat_msgs[CAN_STATUS_MSGS_TO_STORE];
@@ -210,13 +214,13 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				switch (commands_send) {
 				case 0:
 				case 3:
-					// commands_process_packet not available - dependency removed
+					commands_process_packet(rx_buffer[buf_ind], rxbuf_len, send_packet_wrapper);
 					break;
 				case 1:
-					// commands_send_packet_can_last not available - dependency removed  
+					commands_send_packet_can_last(rx_buffer[buf_ind], rxbuf_len);
 					break;
 				case 2:
-					// commands_process_packet not available - dependency removed
+					commands_process_packet(rx_buffer[buf_ind], rxbuf_len, 0);
 					break;
 				default:
 					break;
@@ -252,13 +256,13 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			switch (commands_send) {
 			case 0:
 			case 3:
-				// commands_process_packet not available - dependency removed
+				commands_process_packet(data8 + ind, len - ind, send_packet_wrapper);
 				break;
 			case 1:
-				// commands_send_packet_can_last not available - dependency removed
+				commands_send_packet_can_last(data8 + ind, len - ind);
 				break;
 			case 2:
-				// commands_process_packet not available - dependency removed
+				commands_process_packet(data8 + ind, len - ind, 0);
 				break;
 			default:
 				break;
@@ -386,6 +390,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				ind = 0;
 				msg->id = id;
 				msg->rx_time = xTaskGetTickCount();
+				ind = 0;
 				int j = 0;
 				while (ind < len) {
 					msg->adc_voltages[j++] = buffer_get_float16(data8, 1e2, &ind);
@@ -402,6 +407,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				ind = 0;
 				msg->id = id;
 				msg->rx_time = xTaskGetTickCount();
+				ind = 0;
 				int j = 0;
 				while (ind < len) {
 					msg->adc_voltages[j++] = buffer_get_float16(data8, 1e2, &ind);
@@ -448,84 +454,98 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			}
 		}
 	} break;
+/*
+	case CAN_PACKET_GNSS_TIME: {
+		if (ublox_init_ok()) {
+			break;
+		}
 
+		nmea_state_t *s = nmea_get_state();
+
+		s->gga.ms_today = buffer_get_int32(data8, &ind);
+		s->rmc.yy = buffer_get_int16(data8, &ind);
+		s->rmc.mo = data8[ind++];
+		s->rmc.dd = data8[ind++];
+
+		int ms = s->gga.ms_today % 1000;
+		int ss = (s->gga.ms_today / 1000) % 60;
+		int mm = (s->gga.ms_today / 1000 / 60) % 60;
+		int hh = (s->gga.ms_today / 1000 / 60 / 60) % 24;
+
+		s->rmc.hh = hh;
+		s->rmc.mm = mm;
+		s->rmc.ss = ss;
+		s->rmc.ms = ms;
+
+		s->gga_cnt++;
+		s->rmc_cnt++;
+		s->gga.update_time = xTaskGetTickCount();
+		s->rmc.update_time = xTaskGetTickCount();
+	} break;
+
+	case CAN_PACKET_GNSS_LAT: {
+		if (ublox_init_ok()) {
+			break;
+		}
+
+		nmea_state_t *s = nmea_get_state();
+
+		ind = 0;
+		volatile double tmp = buffer_get_double64(data8, D(1e16), &ind);
+
+		portDISABLE_INTERRUPTS();
+		s->gga.lat = tmp;
+		portENABLE_INTERRUPTS();
+
+		s->gga_cnt++;
+		s->gga.update_time = xTaskGetTickCount();
+	} break;
+
+	case CAN_PACKET_GNSS_LON: {
+		if (ublox_init_ok()) {
+			break;
+		}
+
+		nmea_state_t *s = nmea_get_state();
+
+		ind = 0;
+		volatile double tmp = buffer_get_double64(data8, D(1e16), &ind);
+
+		portDISABLE_INTERRUPTS();
+		s->gga.lon = tmp;
+		portENABLE_INTERRUPTS();
+
+		s->gga_cnt++;
+		s->gga.update_time = xTaskGetTickCount();
+	} break;
+
+	case CAN_PACKET_GNSS_ALT_SPEED_HDOP: {
+		if (ublox_init_ok()) {
+			break;
+		}
+
+		nmea_state_t *s = nmea_get_state();
+
+		s->gga.height = buffer_get_float32_auto(data8, &ind);
+		s->rmc.speed = buffer_get_float16(data8, 1.0e2, &ind);
+		s->gga.h_dop = buffer_get_float16(data8, 1.0e2, &ind);
+
+		s->gga_cnt++;
+		s->rmc_cnt++;
+		s->gga.update_time = xTaskGetTickCount();
+		s->rmc.update_time = xTaskGetTickCount();
+	} break;
+*/
 	case CAN_PACKET_UPDATE_BAUD: {
-		// Update CAN baud rate
-		if (len >= 1) {
-			CAN_BAUD new_baud = (CAN_BAUD)data8[0];
-			update_baud(new_baud);
-		}
-	} break;
+		ind = 0;
+		int kbits = buffer_get_int16(data8, &ind);
+		int delay_msec = buffer_get_int16(data8, &ind);
+		CAN_BAUD baud = comm_can_kbits_to_baud(kbits);
 
-	case CAN_PACKET_SET_POS_KP: {
-		// Set position PID Kp parameter
-		if (len >= 4) {
-			// TODO: Implement position PID Kp setting
-			// This would typically update motor configuration
-		}
-	} break;
-
-	case CAN_PACKET_SET_POS_KI: {
-		// Set position PID Ki parameter
-		if (len >= 4) {
-			// TODO: Implement position PID Ki setting
-			// This would typically update motor configuration
-		}
-	} break;
-
-	case CAN_PACKET_SET_POS_KD: {
-		// Set position PID Kd parameter
-		if (len >= 4) {
-			// TODO: Implement position PID Kd setting
-			// This would typically update motor configuration
-		}
-	} break;
-
-	case CAN_PACKET_SET_POS_FILTER: {
-		// Set position filter parameter
-		if (len >= 4) {
-			// TODO: Implement position filter setting
-			// This would typically update motor configuration
-		}
-	} break;
-
-	case CAN_PACKET_SET_POS_FLOATINGPOINT: {
-		// Set position floating point mode
-		if (len >= 1) {
-			// TODO: Implement position floating point mode setting
-			// This would typically update motor configuration
-		}
-	} break;
-
-	case CAN_PACKET_SET_MAX_SP_VEL: {
-		// Set maximum speed velocity
-		if (len >= 4) {
-			// TODO: Implement maximum speed velocity setting
-			// This would typically update motor configuration
-		}
-	} break;
-
-	case CAN_PACKET_SET_MAX_SP_ACCEL: {
-		// Set maximum speed acceleration
-		if (len >= 4) {
-			// TODO: Implement maximum speed acceleration setting
-			// This would typically update motor configuration
-		}
-	} break;
-
-	case CAN_PACKET_SET_MAX_SP_DECEL: {
-		// Set maximum speed deceleration
-		if (len >= 4) {
-			// TODO: Implement maximum speed deceleration setting
-			// This would typically update motor configuration
-		}
-	} break;
-
-	case CAN_PACKET_SET_CURRENT_PID_POS: {
-		// Set current with PID position
-		if (len >= 8) {
-			// TODO: Implement current with PID position setting
-			// This would typically set both current and position targets
+		if (baud != CAN_BAUD_INVALID) {
+			backup.config.can_baud_rate = baud;
+			main_store_backup_data();
+			comm_can_update_baudrate(delay_msec);
 		}
 	} break;
 
@@ -589,10 +609,14 @@ static void process_task(void *arg) {
 				rx_read = 0;
 			}
 
+			//lispif_process_can(msg->identifier, msg->data, msg->data_length_code, msg->extd);
+
 			if (use_vesc_decoder) {
-				if (msg->extd) {
-					decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
-				}
+				//if (!bms_process_can_frame(msg->identifier, msg->data, msg->data_length_code, msg->extd)) {
+					if (msg->extd) {
+						decode_msg(msg->identifier, msg->data, msg->data_length_code, false);
+					}
+				//}
 			}
 		}
 	}
@@ -601,6 +625,9 @@ static void process_task(void *arg) {
 }
 
 static void status_task(void *arg) {
+	//int gga_cnt_last = 0;
+	//int rmc_cnt_last = 0;
+
 	while (!stop_threads) {
 		int rate = backup.config.can_status_rate_hz;
 
@@ -621,7 +648,59 @@ static void status_task(void *arg) {
 			comm_can_transmit_eid(backup.config.controller_id | ((uint32_t)CAN_PACKET_IO_BOARD_ADC_1_TO_4 << 8), buffer, send_index);
 		}
 #endif
+/*
+		{ // GNSS
+			nmea_state_t *s = nmea_get_state();
 
+			bool date_valid = true;
+			if (s->rmc.yy < 0 || s->rmc.mo < 0 || s->rmc.dd < 0 ||
+					s->rmc.hh < 0 || s->rmc.mm < 0 || s->rmc.ss < 0) {
+				date_valid = false;
+			}
+
+			bool gga_updated = false;
+			if (s->gga_cnt != gga_cnt_last) {
+				gga_updated = true;
+				gga_cnt_last = s->gga_cnt;
+			}
+
+			bool rmc_updated = false;
+			if (s->rmc_cnt != rmc_cnt_last) {
+				rmc_updated = true;
+				rmc_cnt_last = s->rmc_cnt;
+			}
+
+			if (date_valid && rmc_updated) {
+				int32_t send_index = 0;
+				uint8_t buffer[8];
+				buffer_append_int32(buffer, s->gga.ms_today, &send_index);
+				buffer_append_int16(buffer, s->rmc.yy, &send_index);
+				buffer[send_index++] = s->rmc.mo;
+				buffer[send_index++] = s->rmc.dd;
+				comm_can_transmit_eid(backup.config.controller_id | ((uint32_t)CAN_PACKET_GNSS_TIME << 8), buffer, send_index);
+			}
+
+			if (gga_updated) {
+				// Lat
+				int32_t send_index = 0;
+				uint8_t buffer[8];
+				buffer_append_double64(buffer, s->gga.lat, D(1e16), &send_index);
+				comm_can_transmit_eid(backup.config.controller_id | ((uint32_t)CAN_PACKET_GNSS_LAT << 8), buffer, send_index);
+
+				// Lon
+				send_index = 0;
+				buffer_append_double64(buffer, s->gga.lon, D(1e16), &send_index);
+				comm_can_transmit_eid(backup.config.controller_id | ((uint32_t)CAN_PACKET_GNSS_LON << 8), buffer, send_index);
+
+				// Alt, speed, hdop
+				send_index = 0;
+				buffer_append_float32_auto(buffer, s->gga.height, &send_index);
+				buffer_append_float16(buffer, s->rmc.speed, 1.0e2, &send_index);
+				buffer_append_float16(buffer, s->gga.h_dop, 1.0e2, &send_index);
+				comm_can_transmit_eid(backup.config.controller_id | ((uint32_t)CAN_PACKET_GNSS_ALT_SPEED_HDOP << 8), buffer, send_index);
+			}
+		}
+*/
 		xSemaphoreTake(status_sem, configTICK_RATE_HZ / rate);
 	}
 
@@ -668,6 +747,11 @@ static void update_baud(CAN_BAUD baudrate) {
 
 	case CAN_BAUD_75K: {
 		// Invalid
+	} break;
+
+	case CAN_BAUD_100K: {
+		twai_timing_config_t t_config2 = TWAI_TIMING_CONFIG_100KBITS();
+		t_config = t_config2;
 	} break;
 
 	default:
@@ -772,7 +856,24 @@ void comm_can_use_vesc_decoder(bool use_vesc_dec) {
 	use_vesc_decoder = use_vesc_dec;
 }
 
-void comm_can_update_baudrate(void) {
+CAN_BAUD comm_can_kbits_to_baud(int kbits) {
+	CAN_BAUD new_baud = CAN_BAUD_INVALID;
+	switch (kbits) {
+	case 125: new_baud = CAN_BAUD_125K; break;
+	case 250: new_baud = CAN_BAUD_250K; break;
+	case 500: new_baud = CAN_BAUD_500K; break;
+	case 1000: new_baud = CAN_BAUD_1M; break;
+	case 10: new_baud = CAN_BAUD_10K; break;
+	case 20: new_baud = CAN_BAUD_20K; break;
+	case 50: new_baud = CAN_BAUD_50K; break;
+	case 75: new_baud = CAN_BAUD_75K; break;
+	case 100: new_baud = CAN_BAUD_100K; break;
+	default: new_baud = CAN_BAUD_INVALID; break;
+	}
+	return new_baud;
+}
+
+void comm_can_update_baudrate(int delay_msec) {
 	if (!init_done) {
 		return;
 	}
@@ -782,6 +883,11 @@ void comm_can_update_baudrate(void) {
 
 	twai_stop();
 	twai_driver_uninstall();
+
+	if (delay_msec > 0) {
+		vTaskDelay(delay_msec / portTICK_PERIOD_MS);
+	}
+
 	update_baud(backup.config.can_baud_rate);
 	twai_driver_install(&g_config, &t_config, &f_config);
 	twai_start();
@@ -852,7 +958,7 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 	}
 
 	twai_transmit(&tx_msg, 5);
-	
+
 	xSemaphoreGive(send_mutex);
 }
 
@@ -880,7 +986,7 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 	}
 
 	twai_transmit(&tx_msg, 5);
-	
+
 	xSemaphoreGive(send_mutex);
 }
 
@@ -1089,6 +1195,15 @@ void comm_can_set_handbrake_rel(uint8_t controller_id, float current_rel) {
 	buffer_append_float32(buffer, current_rel, 1e5, &send_index);
 	comm_can_transmit_eid(controller_id |
 			((uint32_t)CAN_PACKET_SET_CURRENT_HANDBRAKE_REL << 8), buffer, send_index);
+}
+
+void comm_can_send_update_baud(int kbits, int delay_msec) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+	buffer_append_int16(buffer, kbits, &send_index);
+	buffer_append_int16(buffer, delay_msec, &send_index);
+	comm_can_transmit_eid(255 |
+			((uint32_t)CAN_PACKET_UPDATE_BAUD << 8), buffer, send_index);
 }
 
 can_status_msg *comm_can_get_status_msg_index(int index) {
@@ -1325,15 +1440,6 @@ void comm_can_update_pid_pos_offset(int id, float angle_now, bool store) {
 }
 
 // Extended CAN commands from ElwinBoots/bldc
-
-void comm_can_update_baud(uint8_t controller_id, CAN_BAUD baud_rate) {
-	int32_t send_index = 0;
-	uint8_t buffer[8];
-
-	buffer[send_index++] = baud_rate;
-
-	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_UPDATE_BAUD << 8), buffer, send_index);
-}
 
 void comm_can_set_pos_kp(uint8_t controller_id, float kp) {
 	int32_t send_index = 0;

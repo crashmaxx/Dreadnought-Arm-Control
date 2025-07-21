@@ -18,11 +18,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
    
-#include "comm_can.h"
-#include "crsf_receiver.h"
-#include "crsf_utils.h"
-#include "crsf_config.h"
-#include "encoder_interface.h"
+#include "comm/comm_can.h"
+#include "comm/crsf_receiver.h"
+#include "comm/crsf_utils.h"
+#include "comm/crsf_config.h"
+#include "drivers/encoder_interface.h"
 #include "board_config.h"
 #include "esp_now_telemetry.h"
 #include "esp_now_telemetry_config.h"

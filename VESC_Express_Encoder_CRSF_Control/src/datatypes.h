@@ -79,7 +79,8 @@ typedef enum {
 	CAN_BAUD_20K,
 	CAN_BAUD_50K,
 	CAN_BAUD_75K,
-	CAN_BAUD_100K
+	CAN_BAUD_100K,
+	CAN_BAUD_INVALID
 } CAN_BAUD;
 
 typedef enum {
