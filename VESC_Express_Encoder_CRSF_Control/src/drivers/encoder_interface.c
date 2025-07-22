@@ -36,7 +36,7 @@ bool encoder_init(void) {
         encoder_interface = &pwm_encoder_interface;
         ESP_LOGI(TAG, "Initializing PWM magnetic encoder");
     #elif ENCODER_TYPE == ENCODER_TYPE_QUADRATURE
-        encoder_interface = &quadrature_encoder_interface;
+        encoder_interface = &quad_encoder_interface;
         ESP_LOGI(TAG, "Initializing quadrature encoder");
     #elif ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
         encoder_interface = &dual_encoder_interface;

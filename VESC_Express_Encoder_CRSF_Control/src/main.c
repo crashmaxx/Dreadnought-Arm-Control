@@ -24,35 +24,91 @@
 #include "comm/crsf_config.h"
 #include "drivers/encoder_interface.h"
 #include "board_config.h"
-#include "esp_now_telemetry.h"
-#include "esp_now_telemetry_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
+#include "main.h"
+#include <math.h>
 #include "esp_log.h"
 
 // CRSF Configuration from config header
 #define CONTROL_TASK_DELAY_MS (1000 / CRSF_CONTROL_UPDATE_RATE_HZ)
 
-static const char *TAG = "MAIN";
+// Global backup variable (required by comm_can.c)
+volatile backup_data backup = {
+    .controller_id_init_flag = VAR_INIT_CODE,
+    .controller_id = CRSF_VESC_CONTROLLER_ID,
+    .can_baud_rate_init_flag = VAR_INIT_CODE,
+    .can_baud_rate = CAN_BAUD_500K,
+    .config_init_flag = VAR_INIT_CODE,
+    .config = {
+        .controller_id = CRSF_VESC_CONTROLLER_ID,
+        .can_baud_rate = CAN_BAUD_500K,
+        .can_status_rate_hz = 50,  // 50Hz status rate
+        .wifi_mode = WIFI_MODE_DISABLED,
+        .ble_mode = BLE_MODE_DISABLED
+    }
+};
 
-// ESP-NOW telemetry callback (for receiving telemetry from other devices)
-static void telemetry_recv_callback(const esp_now_telemetry_packet_t* packet, const uint8_t* mac, int len) {
-    ESP_LOGI(TAG, "Received telemetry from %02X:%02X:%02X:%02X:%02X:%02X: %s = %.2f, %.2f, %.2f", 
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
-             packet->name, packet->value1, packet->value2, packet->value3);
+// Stub function for backup data storage (required by comm_can.c)
+void main_store_backup_data(void) {
+    // For ESP32-C3 minimal implementation, we don't need persistent storage
+    // This is just a stub to satisfy the linker
+    ESP_LOGI("BACKUP", "Backup data store requested (stub implementation)");
 }
+
+// Debug configuration - set to 1 to enable, 0 to disable
+#define DEBUG_POSITION_CONTROL      0
+#define DEBUG_CRSF_CHANNELS         0
+#define DEBUG_ENCODER_DATA          1
+#define DEBUG_VESC_STATUS           0
+#define DEBUG_CONTROL_FLOW          0
+
+// Debug macros
+#if DEBUG_POSITION_CONTROL
+#define DEBUG_POS(fmt, ...) ESP_LOGI(TAG, "[POS] " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_POS(fmt, ...)
+#endif
+
+#if DEBUG_CRSF_CHANNELS
+#define DEBUG_CRSF(fmt, ...) ESP_LOGI(TAG, "[CRSF] " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_CRSF(fmt, ...)
+#endif
+
+#if DEBUG_ENCODER_DATA
+#define DEBUG_ENC(fmt, ...) ESP_LOGI(TAG, "[ENC] " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_ENC(fmt, ...)
+#endif
+
+#if DEBUG_VESC_STATUS
+#define DEBUG_VESC(fmt, ...) ESP_LOGI(TAG, "[VESC] " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_VESC(fmt, ...)
+#endif
+
+#if DEBUG_CONTROL_FLOW
+#define DEBUG_FLOW(fmt, ...) ESP_LOGI(TAG, "[FLOW] " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_FLOW(fmt, ...)
+#endif
+
+static const char *TAG = "MAIN";
 
 // Task to handle CRSF data and control
 static void crsf_control_task(void *pvParameters) {
     uint16_t channels[16];
     uint32_t last_print = 0;
     uint32_t last_encoder_print = 0;
-    uint32_t last_telemetry_send = 0;
+    uint32_t last_stack_check = 0;
     
     // VESC position control variables
     float vesc_current_position = 0.0f;
     bool vesc_position_valid = false;
+    
+    ESP_LOGI(TAG, "CRSF control task started with %d bytes stack", CRSF_TASK_STACK_SIZE);
     
     while (1) {
         // Update CRSF receiver
@@ -63,30 +119,51 @@ static void crsf_control_task(void *pvParameters) {
         
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
         
+        // Check stack usage every 5 seconds
+        if (current_time - last_stack_check > 5000) {
+            UBaseType_t stack_free = uxTaskGetStackHighWaterMark(NULL);
+            if (stack_free < 500) {
+                ESP_LOGW(TAG, "Low stack space: %u bytes free", stack_free);
+            } else {
+                ESP_LOGI(TAG, "Stack health: %u bytes free", stack_free);
+            }
+            last_stack_check = current_time;
+        }
+        
         // Request VESC position every 50ms for responsive control
         // VESC sends status messages automatically - we just check if we have recent data
         can_status_msg_4 *vesc_status = comm_can_get_status_msg_4_id(CRSF_VESC_CONTROLLER_ID);
-        if (vesc_status && (current_time - vesc_status->rx_time) < 100) {
-            // We have recent VESC position data (within 100ms)
-            vesc_current_position = vesc_status->pid_pos_now;
-            vesc_position_valid = true;
+        if (vesc_status) {
+            uint32_t age_ms = current_time - vesc_status->rx_time;
+            if (age_ms < 100) {
+                // We have recent VESC position data (within 100ms)
+                vesc_current_position = vesc_status->pid_pos_now;
+                vesc_position_valid = true;
+                DEBUG_VESC("VESC pos: %.3f rev, age: %lums", 
+                          vesc_current_position, age_ms);
+            } else {
+                // VESC position data is stale
+                vesc_position_valid = false;
+                DEBUG_VESC("VESC data STALE: %lums", age_ms);
+            }
         } else {
-            // No recent VESC position data available
+            // No VESC status message received at all
             vesc_position_valid = false;
+            DEBUG_VESC("VESC missing from CAN ID %d", CRSF_VESC_CONTROLLER_ID);
         }
         
-        // Send telemetry data
-        if (esp_now_telemetry_is_ready() && (current_time - last_telemetry_send > ESP_NOW_TELEMETRY_RATE_MS)) {
+        // Print encoder data for debugging (independent of CRSF)
+        if (current_time - last_encoder_print > 500) { // Every 500ms
             if (encoder_is_valid()) {
-                // Send encoder telemetry using helper macro
-                TELEMETRY_SEND_ENCODER(encoder_get_angle_deg(), 
-                                     encoder_get_velocity_deg_s(), 
-                                     encoder_is_valid());
+                float angle = encoder_get_angle_deg();
+                float velocity = encoder_get_velocity_deg_s();
+                DEBUG_ENC("Angle: %.2f°, Velocity: %.1f°/s, Errors: %lu", 
+                         angle, velocity, encoder_get_error_count());
+            } else {
+                DEBUG_ENC("INVALID - errors: %lu", encoder_get_error_count());
             }
-            // Send system status
-            TELEMETRY_SEND_STATUS(crsf_is_armed(), crsf_is_connected(), encoder_get_error_count());
             
-            last_telemetry_send = current_time;
+            last_encoder_print = current_time;
         }
         
         // Check for new CRSF data
@@ -96,25 +173,11 @@ static void crsf_control_task(void *pvParameters) {
             
             // Print channel data for debugging
             if (current_time - last_print > CRSF_DEBUG_PRINT_RATE_MS) {
-                #if CRSF_ENABLE_LOGGING
-                ESP_LOGI(TAG, "CRSF Channels: CH1=%d CH2=%d CH3=%d CH4=%d CH5=%d Connected=%s Failsafe=%s",
+                DEBUG_CRSF("Channels: CH1=%d CH2=%d CH3=%d CH4=%d CH5=%d Connected=%s Failsafe=%s",
                          channels[0], channels[1], channels[2], channels[3], channels[4],
                          crsf_is_connected() ? "YES" : "NO",
                          crsf_is_failsafe() ? "YES" : "NO");
-                #endif
                 last_print = current_time;
-            }
-            
-            // Print encoder data for debugging
-            if (current_time - last_encoder_print > 500) { // Every 500ms
-                if (encoder_is_valid()) {
-                    ESP_LOGI(TAG, "Encoder: %.2f° (%.3f rad), Vel: %.1f°/s, Type: %s", 
-                             encoder_get_angle_deg(), encoder_get_angle_rad(),
-                             encoder_get_velocity_deg_s(), encoder_get_type_name());
-                } else {
-                    ESP_LOGW(TAG, "Encoder: INVALID (errors: %lu)", encoder_get_error_count());
-                }
-                last_encoder_print = current_time;
             }
             
             // Here you can add your control logic using the channel data and encoder feedback
@@ -129,11 +192,14 @@ static void crsf_control_task(void *pvParameters) {
             
             // Send motor commands based on CRSF input and encoder feedback
             if (crsf_is_connected() && !crsf_is_failsafe()) {
+                DEBUG_FLOW("CRSF connected, no failsafe");
                 // Check if armed using utility function
                 if (crsf_is_armed()) {
+                    DEBUG_FLOW("System ARMED - proceeding with control");
                     // Position control logic
                     // Only proceed with position control if we have valid VESC position
                     if (vesc_position_valid) {
+                        DEBUG_FLOW("Using position control mode");
                         // Convert CRSF channel to target angle (using channel 1 for position control)
                         // CRSF channels are normalized 0.0 to 1.0, convert to -180 to +180 degrees
                         float crsf_target_degrees = (crsf_channel_to_normalized(1) - 0.5f) * 360.0f;
@@ -147,30 +213,38 @@ static void crsf_control_task(void *pvParameters) {
                         // Apply gear ratio compensation
                         float gear_compensated_error = position_error * GEAR_RATIO;
                         
-                        // Calculate new target position for VESC
-                        float vesc_target_position = vesc_current_position + gear_compensated_error;
+                        // Calculate new target position for VESC (convert degrees to revolutions)
+                        float vesc_target_position_degrees = vesc_current_position * 360.0f + gear_compensated_error;
+                        float vesc_target_position_revolutions = vesc_target_position_degrees / 360.0f;
                         
-                        // Send position command to VESC
-                        comm_can_set_pos(CRSF_VESC_CONTROLLER_ID, vesc_target_position);
+                        // Send position command to VESC (in revolutions)
+                        comm_can_set_pos_floatingpoint(CRSF_VESC_CONTROLLER_ID, vesc_target_position_revolutions);
                         
-                        ESP_LOGI(TAG, "Position Control - CRSF: %.1f°, Encoder: %.1f°, Error: %.1f°, VESC Target: %.1f°", 
-                                crsf_target_degrees, encoder_degrees, position_error, vesc_target_position);
+                        DEBUG_POS("CRSF: %.1f°, Encoder: %.1f°, Error: %.1f°, Gear Error: %.1f°, VESC Target: %.3f rev (%.1f°)", 
+                                crsf_target_degrees, encoder_degrees, position_error, gear_compensated_error,
+                                vesc_target_position_revolutions, vesc_target_position_degrees);
                     } else {
+                        DEBUG_FLOW("Using current control mode (no VESC position)");
                         // No valid VESC position - fallback to current control
                         float throttle_normalized = crsf_channel_to_normalized(CRSF_THROTTLE_CHANNEL);
                         float current_command = throttle_normalized * CRSF_MAX_CURRENT_AMPS;
                         comm_can_set_current(CRSF_VESC_CONTROLLER_ID, current_command);
+                        DEBUG_POS("Current control: %.2f A (throttle: %.2f)", current_command, throttle_normalized);
                     }
                 } else {
+                    DEBUG_FLOW("System DISARMED - sending zero current");
                     // Disarmed - send zero current
                     comm_can_set_current(CRSF_VESC_CONTROLLER_ID, 0.0f);
                 }
             } else {
+                DEBUG_FLOW("CRSF disconnected or failsafe - applying failsafe behavior");
                 // No connection or failsafe - apply failsafe behavior
                 if (CRSF_FAILSAFE_ENABLE_BRAKE) {
                     comm_can_set_current_brake(CRSF_VESC_CONTROLLER_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
+                    DEBUG_FLOW("Failsafe: brake current %.2f A", CRSF_FAILSAFE_BRAKE_CURRENT);
                 } else {
                     comm_can_set_current(CRSF_VESC_CONTROLLER_ID, CRSF_FAILSAFE_CURRENT);
+                    DEBUG_FLOW("Failsafe: current %.2f A", CRSF_FAILSAFE_CURRENT);
                 }
             }
         }
@@ -182,41 +256,43 @@ static void crsf_control_task(void *pvParameters) {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting VESC Express Encoder CRSF Control");
     ESP_LOGI(TAG, "Board: %s", BOARD_NAME);
-    ESP_LOGI(TAG, "Encoder Type: %s", encoder_get_type_name());
+    
+    // Test debug macros
+    DEBUG_FLOW("Debug system initialized - all categories enabled");
+    DEBUG_POS("Position control debug active");
+    DEBUG_CRSF("CRSF debug active");
+    DEBUG_ENC("Encoder debug active");
+    DEBUG_VESC("VESC debug active");
     
     // Initialize CAN communication
     #ifdef CAN_TX_GPIO_NUM
     comm_can_start(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
-    ESP_LOGI(TAG, "CAN communication started");
+    ESP_LOGI(TAG, "CAN communication started - TX: GPIO%d, RX: GPIO%d", CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
+    DEBUG_VESC("CAN bus initialized, looking for VESC at CAN ID %d", CRSF_VESC_CONTROLLER_ID);
+    #else
+    ESP_LOGW(TAG, "CAN pins not defined - CAN communication disabled");
     #endif
 
     // Initialize encoder system
+    ESP_LOGI(TAG, "Encoder config - Type: DUAL_HYBRID, PPR: %d", ENCODER_PPR);
+    ESP_LOGI(TAG, "Encoder pins - PWM: GPIO%d, A: GPIO%d, B: GPIO%d", 
+             ENCODER_PWM_PIN, ENCODER_A_PIN, ENCODER_B_PIN);
+    ESP_LOGI(TAG, "PWM range: %d-%d us", ENCODER_PWM_MIN_US, ENCODER_PWM_MAX_US);
+    
     if (encoder_init()) {
         ESP_LOGI(TAG, "Encoder system initialized successfully");
+        // Wait a moment for encoder to stabilize
+        vTaskDelay(pdMS_TO_TICKS(100));
+        DEBUG_ENC("Encoder init: Valid=%s, Initial angle=%.2f°", 
+                 encoder_is_valid() ? "YES" : "NO",
+                 encoder_get_angle_deg());
     } else {
         ESP_LOGE(TAG, "Failed to initialize encoder system");
+        DEBUG_ENC("Encoder initialization FAILED - check hardware connections");
+        ESP_LOGE(TAG, "Check pins: PWM=GPIO%d, A=GPIO%d, B=GPIO%d", 
+                 ENCODER_PWM_PIN, ENCODER_A_PIN, ENCODER_B_PIN);
         return;
     }
-
-    // Initialize ESP-NOW telemetry
-    #if ESP_NOW_TELEMETRY_ENABLE
-    esp_now_telemetry_config_t telemetry_config = {
-        .peer_mac = PEER_MAC_ADDR,
-        .wifi_channel = ESP_NOW_WIFI_CHANNEL,
-        .encrypt = ESP_NOW_ENCRYPT,
-        .recv_callback = telemetry_recv_callback
-    };
-    
-    if (esp_now_telemetry_init(&telemetry_config)) {
-        ESP_LOGI(TAG, "ESP-NOW telemetry initialized successfully");
-        ESP_LOGI(TAG, "Telemetry peer: %02X:%02X:%02X:%02X:%02X:%02X", 
-                 telemetry_config.peer_mac[0], telemetry_config.peer_mac[1], 
-                 telemetry_config.peer_mac[2], telemetry_config.peer_mac[3], 
-                 telemetry_config.peer_mac[4], telemetry_config.peer_mac[5]);
-    } else {
-        ESP_LOGW(TAG, "Failed to initialize ESP-NOW telemetry");
-    }
-    #endif
 
     // Initialize CRSF receiver
     crsf_init(CRSF_UART_NUM, CRSF_TX_PIN, CRSF_RX_PIN, CRSF_BAUDRATE);
@@ -227,7 +303,5 @@ void app_main(void) {
     ESP_LOGI(TAG, "CRSF control task created");
     
     ESP_LOGI(TAG, "Initialization complete - System ready");
-    ESP_LOGI(TAG, "Control Channel: %d, PID: Kp=%.2f Ki=%.3f Kd=%.3f", 
-             CONTROL_CHANNEL, DEFAULT_KP, DEFAULT_KI, DEFAULT_KD);
     ESP_LOGI(TAG, "Angle Range: %.1f° to %.1f°", MIN_ANGLE, MAX_ANGLE);
 }

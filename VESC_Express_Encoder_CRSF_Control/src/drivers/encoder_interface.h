@@ -79,12 +79,12 @@ float encoder_rad_to_deg(float rad);
 float encoder_deg_to_rad(float deg);
 
 // Encoder type implementations
-#if ENCODER_TYPE == ENCODER_TYPE_PWM_MAGNETIC
+#if ENCODER_TYPE == ENCODER_TYPE_PWM_MAGNETIC || ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
 extern const encoder_interface_t pwm_encoder_interface;
 #endif
 
-#if ENCODER_TYPE == ENCODER_TYPE_QUADRATURE
-extern const encoder_interface_t quadrature_encoder_interface;
+#if ENCODER_TYPE == ENCODER_TYPE_QUADRATURE || ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
+extern const encoder_interface_t quad_encoder_interface;
 #endif
 
 #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID

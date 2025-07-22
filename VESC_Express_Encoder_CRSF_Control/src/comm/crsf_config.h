@@ -35,7 +35,7 @@
 // Protocol Configuration
 #define CRSF_CONNECTION_TIMEOUT_MS  500             // Connection timeout in milliseconds
 #define CRSF_TASK_PRIORITY          5               // FreeRTOS task priority
-#define CRSF_TASK_STACK_SIZE        2048            // Task stack size in bytes
+#define CRSF_TASK_STACK_SIZE        8192            // Task stack size in bytes (increased for debug logging)
 #define CRSF_UART_BUFFER_SIZE       256             // UART buffer size
 #define CRSF_UART_QUEUE_SIZE        10              // UART event queue size
 

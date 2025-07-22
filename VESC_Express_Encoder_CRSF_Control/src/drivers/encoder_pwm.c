@@ -19,7 +19,7 @@
 
 #include "encoder_interface.h"
 
-#if ENCODER_TYPE == ENCODER_TYPE_PWM_MAGNETIC
+#if ENCODER_TYPE == ENCODER_TYPE_PWM_MAGNETIC || ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
 
 #include "driver/gpio.h"
 #include "driver/mcpwm.h"
@@ -49,9 +49,9 @@ typedef struct {
 static pwm_encoder_state_t pwm_state = {0};
 
 // PWM capture configuration
-#define PWM_TIMEOUT_US 100000  // 100ms timeout
-#define PWM_MIN_PULSE_US 500   // Minimum valid pulse width
-#define PWM_MAX_PULSE_US 2500  // Maximum valid pulse width
+#define PWM_TIMEOUT_US 200000  // 200ms timeout (increased for stability)
+#define PWM_MIN_PULSE_US 1     // Minimum 1μs pulse to filter noise (even though encoder can go to 0)
+#define PWM_MAX_PULSE_US ENCODER_PWM_MAX_US   // Use board config maximum
 #define VELOCITY_FILTER_ALPHA 0.1f  // Low-pass filter for velocity
 
 // GPIO interrupt handler for PWM capture
@@ -67,13 +67,22 @@ static void IRAM_ATTR pwm_gpio_isr_handler(void* arg) {
         if (pwm_state.last_pulse_us > 0) {
             uint32_t pulse_width = current_time_us - pwm_state.last_pulse_us;
             
-            // Validate pulse width
-            if (pulse_width >= PWM_MIN_PULSE_US && pulse_width <= PWM_MAX_PULSE_US) {
+            // Validate pulse width - clamp high values to max instead of rejecting
+            // This allows readings >PWM_MAX_US to be treated as 359° instead of invalid
+            if (pulse_width >= PWM_MIN_PULSE_US) {
+                // Clamp to maximum range instead of rejecting
+                if (pulse_width > PWM_MAX_PULSE_US) {
+                    pulse_width = PWM_MAX_PULSE_US;
+                    ESP_LOGD(TAG, "Clamped pulse to max: %lu μs", pulse_width);
+                }
                 pwm_state.pulse_width_us = pulse_width;
                 pwm_state.timestamp_us = current_time_us;
                 pwm_state.valid = true;
+                ESP_LOGD(TAG, "Valid pulse: %lu μs", pulse_width);
             } else {
+                // Only reject if below minimum (too short - likely noise)
                 pwm_state.error_count++;
+                ESP_LOGD(TAG, "Rejected short pulse: %lu μs", pulse_width);
             }
         }
     }
@@ -126,11 +135,57 @@ static bool pwm_encoder_init(void) {
 static bool pwm_encoder_update(void) {
     uint32_t current_time_us = esp_timer_get_time();
     
-    // Check for timeout
+    // Timeout function DISABLED - user prefers readings over timeout errors
+    // Once we have a valid reading, we keep it until a new one arrives
+    /*
     if (pwm_state.valid && (current_time_us - pwm_state.timestamp_us) > PWM_TIMEOUT_US) {
         pwm_state.valid = false;
         pwm_state.timeout_count++;
-        ESP_LOGW(TAG, "PWM encoder timeout (count: %lu)", pwm_state.timeout_count);
+        ESP_LOGW(TAG, "PWM encoder timeout (count: %lu, last pulse: %lu μs ago)", 
+                pwm_state.timeout_count, (current_time_us - pwm_state.timestamp_us));
+    }
+    */
+    
+    // Special case: Check if GPIO is constantly low (0V = 0 degrees)
+    // Re-enabled with very conservative settings to detect true 0V only
+    int gpio_level = gpio_get_level(ENCODER_PWM_PIN);
+    static uint32_t low_start_time = 0;
+    static bool was_low = false;
+    static uint32_t last_valid_pulse_time = 0;
+    
+    // Track when we last had a valid PWM pulse
+    if (pwm_state.valid && pwm_state.pulse_width_us > 0) {
+        last_valid_pulse_time = current_time_us;
+    }
+    
+    if (gpio_level == 0) {
+        if (!was_low) {
+            low_start_time = current_time_us;
+            was_low = true;
+        } else if (current_time_us - low_start_time > 500000) { // Low for >500ms = very likely constant 0V
+            // Check if we haven't had any valid pulses for a very long time
+            if (last_valid_pulse_time == 0 || (current_time_us - last_valid_pulse_time) > 600000) { // No pulse for >600ms
+                // Only now treat as constant 0V (true 0 degrees)
+                pwm_state.angle_rad = 0.0f;
+                pwm_state.angle_deg = 0.0f;
+                pwm_state.timestamp_us = current_time_us;
+                pwm_state.valid = true;
+                
+                // Update global encoder data for 0 degrees
+                encoder_data.angle_rad = 0.0f;
+                encoder_data.angle_deg = 0.0f;
+                encoder_data.velocity_rad_s = 0.0f;  // Assume stationary at 0
+                encoder_data.velocity_deg_s = 0.0f;
+                encoder_data.timestamp_us = current_time_us;
+                encoder_data.valid = true;
+                encoder_data.error_count = pwm_state.error_count;
+                
+                ESP_LOGI(TAG, "Detected constant 0V - encoder at 0 degrees");
+                return true;
+            }
+        }
+    } else {
+        was_low = false;
     }
     
     if (pwm_state.valid && pwm_state.pulse_width_us > 0) {
@@ -139,9 +194,9 @@ static bool pwm_encoder_update(void) {
         float pulse_range = ENCODER_PWM_MAX_US - ENCODER_PWM_MIN_US;
         float normalized = (float)(pwm_state.pulse_width_us - ENCODER_PWM_MIN_US) / pulse_range;
         
-        // Clamp to valid range
+        // Only clamp lower bound (upper bound handled in ISR)
         if (normalized < 0.0f) normalized = 0.0f;
-        if (normalized > 1.0f) normalized = 1.0f;
+        // Note: normalized can now be exactly 1.0f for max angle (359°)
         
         pwm_state.angle_rad = normalized * 2.0f * M_PI;
         pwm_state.angle_deg = encoder_rad_to_deg(pwm_state.angle_rad);
