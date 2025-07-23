@@ -31,6 +31,14 @@
 #define UART_TX						21
 #define UART_RX						20
 
+// CAN Bus pins
+#define CAN_TX_GPIO_NUM				1
+#define CAN_RX_GPIO_NUM				0
+
+// CRSF pins
+#define CRSF_TX_PIN					2
+#define CRSF_RX_PIN					3
+
 // Functions
 void hw_init(void);
 

@@ -1,9 +1,9 @@
 #ifndef BOARD_CONFIG_H_
 #define BOARD_CONFIG_H_
 
-// ================= BOARD CONFIGURATION SELECTOR =================
-// Uncomment ONE of the following lines to select your board configuration
-
+// =============================================================================
+// BOARD SELECTION - Uncomment ONE board type for your specific robot joint
+// =============================================================================
 #define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
 //#define BOARD_LEFT_ELBOW
@@ -29,6 +29,9 @@
 #define ENCODER_TYPE_I2C_MAGNETIC   5
 #define ENCODER_TYPE_HALL_SENSOR    6
 
+// ESPNOW Peer MAC address for telemetry
+#define PEER_MAC_ADDR {0x18, 0x8B, 0x0E, 0xFF, 0x02, 0xE4}  // Replace with your peer's MAC address
+
 // ================= BOARD CONFIGURATIONS =================
 
 #ifdef BOARD_LEFT_CLAW
@@ -41,11 +44,18 @@
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
   
+  // CAN Configuration
+  #define CAN_VESC_ID 74  // Left claw VESC controller ID
+  #define CAN_ESP32_ID 4  // ESP32 controller ID (VESC_ID + 100)
+
   // Control parameters from Claw_Control
   #define CONTROL_CHANNEL 4
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
+
+  // ESP-NOW telemetry configuration
+  #define ESP_NOW_TELEMETRY_ENABLE 0
 
 #endif
 
@@ -58,6 +68,10 @@
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
+  
+  // CAN Configuration
+  #define CAN_VESC_ID 20  // Right claw VESC controller ID
+  #define CAN_ESP32_ID 120  // ESP32 controller ID (VESC_ID + 100)
   
   // Control parameters from Claw_Control
   #define CONTROL_CHANNEL 4
@@ -77,6 +91,10 @@
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
   
+  // CAN Configuration
+  #define CAN_VESC_ID 30  // Left elbow VESC controller ID
+  #define CAN_ESP32_ID 130  // ESP32 controller ID (VESC_ID + 100)
+  
   // Control parameters from Claw_Control
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
@@ -94,6 +112,10 @@
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
+  
+  // CAN Configuration
+  #define CAN_VESC_ID 40  // Right elbow VESC controller ID
+  #define CAN_ESP32_ID 140  // ESP32 controller ID (VESC_ID + 100)
   
   // Control parameters from Claw_Control
   #define CONTROL_CHANNEL 3
@@ -113,6 +135,10 @@
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
   
+  // CAN Configuration
+  #define CAN_VESC_ID 50  // Left upper arm VESC controller ID
+  #define CAN_ESP32_ID 150  // ESP32 controller ID (VESC_ID + 100)
+  
   // Control parameters from Claw_Control
   #define CONTROL_CHANNEL 2
   #define MIN_ANGLE 0.0f
@@ -130,6 +156,10 @@
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
+  
+  // CAN Configuration
+  #define CAN_VESC_ID 60  // Right upper arm VESC controller ID
+  #define CAN_ESP32_ID 160  // ESP32 controller ID (VESC_ID + 100)
   
   // Control parameters from Claw_Control
   #define CONTROL_CHANNEL 2
@@ -149,6 +179,10 @@
   #define ENCODER_SPI_MOSI_PIN 9
   #define ENCODER_SPI_CLK_PIN 10
   
+  // CAN Configuration
+  #define CAN_VESC_ID 70  // Left shoulder VESC controller ID
+  #define CAN_ESP32_ID 170  // ESP32 controller ID (VESC_ID + 100)
+  
   // Control parameters for shoulder joint
   #define CONTROL_CHANNEL 1
   #define MIN_ANGLE 0.0f
@@ -167,6 +201,10 @@
   #define ENCODER_SPI_MOSI_PIN 9
   #define ENCODER_SPI_CLK_PIN 10
   
+  // CAN Configuration
+  #define CAN_VESC_ID 80  // Right shoulder VESC controller ID
+  #define CAN_ESP32_ID 180  // ESP32 controller ID (VESC_ID + 100)
+  
   // Control parameters for shoulder joint
   #define CONTROL_CHANNEL 1
   #define MIN_ANGLE 0.0f
@@ -182,6 +220,10 @@
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
   
+  // CAN Configuration
+  #define CAN_VESC_ID 115  // Default VESC controller ID
+  #define CAN_ESP32_ID 215  // ESP32 controller ID (VESC_ID + 100)
+  
   // Default control parameters
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
@@ -196,6 +238,10 @@
   #define ENCODER_A_PIN 7
   #define ENCODER_B_PIN 6
   #define ENCODER_PPR 4096
+  
+  // CAN Configuration
+  #define CAN_VESC_ID 115  // Default VESC controller ID
+  #define CAN_ESP32_ID 215  // ESP32 controller ID (VESC_ID + 100)
   
   // Default control parameters
   #define CONTROL_CHANNEL 3
@@ -215,6 +261,10 @@
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
   
+  // CAN Configuration
+  #define CAN_VESC_ID 115  // Default VESC controller ID
+  #define CAN_ESP32_ID 215  // ESP32 controller ID (VESC_ID + 100)
+  
   // Default control parameters
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
@@ -233,6 +283,10 @@
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
+  
+  // CAN Configuration
+  #define CAN_VESC_ID 115  // Custom VESC controller ID - modify as needed
+  #define CAN_ESP32_ID 215  // ESP32 controller ID (VESC_ID + 100)
   
   // Custom control parameters
   #define CONTROL_CHANNEL 3
@@ -281,6 +335,15 @@
 
 #ifndef GEAR_RATIO
   #define GEAR_RATIO 1.0f
+#endif
+
+// CAN defaults
+#ifndef CAN_VESC_ID
+  #define CAN_VESC_ID 115
+#endif
+
+#ifndef CAN_ESP32_ID
+  #define CAN_ESP32_ID 215  // Default ESP32 controller ID if not specified
 #endif
 
 #endif /* BOARD_CONFIG_H_ */

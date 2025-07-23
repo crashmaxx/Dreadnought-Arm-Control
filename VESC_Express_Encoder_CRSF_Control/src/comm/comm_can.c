@@ -28,6 +28,9 @@
 #include "conf_general.h"
 #include "main.h"
 #include "crc.h"
+
+// Debug configuration - set to 1 to enable CAN debug messages, 0 to disable
+#define CAN_DEBUG_ENABLE    0
 #include "packet.h"
 #include "commands.h"
 //#include "nmea.h"
@@ -98,6 +101,15 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 	uint8_t id = eid & 0xFF;
 	CAN_PACKET_ID cmd = eid >> 8;
+
+	// Debug: Log ALL received CAN messages to diagnose communication
+	static uint32_t last_debug_log = 0;
+	uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+	if (CAN_DEBUG_ENABLE && current_time - last_debug_log > 1000) {  // Log every second to avoid spam
+		printf("[CAN_DEBUG] Received message: ID=%d, CMD=%d, len=%d, from_id=%d\n", 
+		       (int)eid, (int)cmd, len, id);
+		last_debug_log = current_time;
+	}
 
 	if (id == 255 || id == backup.config.controller_id) {
 		switch (cmd) {
@@ -295,6 +307,10 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 	switch (cmd) {
 	case CAN_PACKET_STATUS:
+		if (CAN_DEBUG_ENABLE) {
+			printf("[CAN_DEBUG] Received STATUS message from ID %d at time %lu\n", 
+			       id, (unsigned long)(xTaskGetTickCount() * portTICK_PERIOD_MS));
+		}
 		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
 			can_status_msg *stat_tmp = &stat_msgs[i];
 			if (stat_tmp->id == id || stat_tmp->id == -1) {
@@ -304,6 +320,10 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				stat_tmp->rpm = (float)buffer_get_int32(data8, &ind);
 				stat_tmp->current = (float)buffer_get_int16(data8, &ind) / 10.0;
 				stat_tmp->duty = (float)buffer_get_int16(data8, &ind) / 1000.0;
+				if (CAN_DEBUG_ENABLE) {
+					printf("[CAN_DEBUG] Stored STATUS: ID=%d, RPM=%.1f, Current=%.2f, Duty=%.3f\n",
+					       id, stat_tmp->rpm, stat_tmp->current, stat_tmp->duty);
+				}
 				break;
 			}
 		}
@@ -338,6 +358,10 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 		break;
 
 	case CAN_PACKET_STATUS_4:
+		if (CAN_DEBUG_ENABLE) {
+			printf("[CAN_DEBUG] Received STATUS_4 message from ID %d at time %lu\n", 
+			       id, (unsigned long)(xTaskGetTickCount() * portTICK_PERIOD_MS));
+		}
 		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
 			can_status_msg_4 *stat_tmp_4 = &stat_msgs_4[i];
 			if (stat_tmp_4->id == id || stat_tmp_4->id == -1) {
@@ -348,6 +372,10 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				stat_tmp_4->temp_motor = (float)buffer_get_int16(data8, &ind) / 10.0;
 				stat_tmp_4->current_in = (float)buffer_get_int16(data8, &ind) / 10.0;
 				stat_tmp_4->pid_pos_now = (float)buffer_get_int16(data8, &ind) / 50.0;
+				if (CAN_DEBUG_ENABLE) {
+					printf("[CAN_DEBUG] Stored STATUS_4: ID=%d, Temp=%.1f°C, Pos=%.3f rev, Current_in=%.2f A\n",
+					       id, stat_tmp_4->temp_fet, stat_tmp_4->pid_pos_now, stat_tmp_4->current_in);
+				}
 				break;
 			}
 		}

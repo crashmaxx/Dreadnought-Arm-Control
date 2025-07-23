@@ -39,13 +39,7 @@
 #include "buffer.h"
 #include "main.h"
 #include "crc.h"
-
-// Project-specific definitions
-#define FW_VERSION_MAJOR        1
-#define FW_VERSION_MINOR        0
-#define FW_TEST_VERSION_NUMBER  0
-#define HW_NAME                 "ESP32-C3 VESC Express"
-#define FW_NAME                 "VESC Express Encoder CRSF"
+#include "conf_general.h"
 
 // Settings
 #define PRINT_BUFFER_SIZE	400

@@ -28,8 +28,7 @@
 
 // Hardware Configuration
 #define CRSF_UART_NUM               UART_NUM_1      // UART port number
-#define CRSF_TX_PIN                 2               // ESP32 TX pin (to receiver RX)
-#define CRSF_RX_PIN                 3               // ESP32 RX pin (from receiver TX)
+// Note: CRSF_TX_PIN and CRSF_RX_PIN are now defined in hardware-specific files (hw_*.h)
 #define CRSF_BAUDRATE               420000          // Standard CRSF baud rate
 
 // Protocol Configuration
@@ -57,7 +56,7 @@
 #define CRSF_MAX_CURRENT_AMPS       10.0f           // Maximum current limit for safety
 
 // CAN Configuration
-#define CRSF_VESC_CONTROLLER_ID     0               // Target VESC controller ID
+// Note: VESC controller ID is now defined in board_config.h as CAN_VESC_ID
 #define CRSF_CAN_ENABLE_STATUS      true            // Enable CAN status monitoring
 
 // Feature Toggles

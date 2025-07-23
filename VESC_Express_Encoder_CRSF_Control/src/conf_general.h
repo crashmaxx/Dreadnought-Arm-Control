@@ -24,9 +24,34 @@
 
 // Firmware version
 #define FW_VERSION_MAJOR			6
-#define FW_VERSION_MINOR			06
+#define FW_VERSION_MINOR			05
 // Set to 0 for building a release and iterate during beta test builds
 #define FW_TEST_VERSION_NUMBER		0
+
+// Add firmware version information for VESC compatibility
+#ifndef FW_VERSION_MAJOR
+#define FW_VERSION_MAJOR    6
+#endif
+
+#ifndef FW_VERSION_MINOR  
+#define FW_VERSION_MINOR    05
+#endif
+
+#ifndef FW_VERSION_BETA
+#define FW_VERSION_BETA     0
+#endif
+
+// Firmware version string
+#define FW_VERSION_STRING   "6.05"
+
+// Hardware version for VESC Express
+#ifndef HW_VERSION_MAJOR
+#define HW_VERSION_MAJOR    6
+#endif
+
+#ifndef HW_VERSION_MINOR
+#define HW_VERSION_MINOR    0
+#endif
 
 #if !defined(HW_SOURCE) && !defined(HW_HEADER)
 //#define HW_HEADER					"hw_xp_t.h"
@@ -43,6 +68,9 @@
 
 #define HW_HEADER					"hw_devkit_c3.h"
 #define HW_SOURCE					"hw_devkit_c3.c"
+
+//#define HW_HEADER					"hw_devkit_s3.h"
+//#define HW_SOURCE					"hw_devkit_s3.c"
 
 //#define HW_HEADER					"hw_vbms32.h"
 //#define HW_SOURCE					"hw_vbms32.c"
