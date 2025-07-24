@@ -102,7 +102,11 @@ void crsf_parse_rc_channels(const uint8_t *payload) {
     crsf_channels.channels[15] = (uint16_t)(data[20] >> 5 | data[21] << 3) & 0x07FF;
 
     // Check for failsafe flag (bit 22 of the data)
+    #if CRSF_IGNORE_BUILTIN_FAILSAFE
+    crsf_channels.failsafe = false;  // Debug: ignore built-in failsafe for testing
+    #else
     crsf_channels.failsafe = (data[22] & 0x01) != 0;
+    #endif
     
     crsf_channels.last_update = xTaskGetTickCount() * portTICK_PERIOD_MS;
     crsf_channels.valid = true;
@@ -242,9 +246,9 @@ bool crsf_is_failsafe(void) {
     return crsf_channels.failsafe || !crsf_channels.valid;
 }
 
-// Check if receiver is connected
+// Check if receiver is connected (independent of failsafe state)
 bool crsf_is_connected(void) {
-    return crsf_channels.valid && !crsf_channels.failsafe;
+    return crsf_channels.valid;  // Only check if we have valid data, ignore failsafe
 }
 
 // Get last update time

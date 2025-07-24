@@ -1505,11 +1505,11 @@ void comm_can_set_pos_filter(uint8_t controller_id, float filter) {
 	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_SET_POS_FILTER << 8), buffer, send_index);
 }
 
-void comm_can_set_pos_floatingpoint(uint8_t controller_id, bool floating_point) {
+void comm_can_set_pos_floatingpoint(uint8_t controller_id, float pos) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
 
-	buffer[send_index++] = floating_point ? 1 : 0;
+	buffer_append_float32_auto(buffer, pos, &send_index);
 
 	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_SET_POS_FLOATINGPOINT << 8), buffer, send_index);
 }

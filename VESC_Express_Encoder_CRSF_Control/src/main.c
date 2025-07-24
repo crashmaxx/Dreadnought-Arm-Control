@@ -64,9 +64,10 @@ void main_store_backup_data(void) {
 // Debug configuration - set to 1 to enable, 0 to disable
 #define DEBUG_POSITION_CONTROL      0
 #define DEBUG_CRSF_CHANNELS         0
-#define DEBUG_ENCODER_DATA          1
-#define DEBUG_VESC_STATUS           1
+#define DEBUG_ENCODER_DATA          0
+#define DEBUG_VESC_STATUS           0
 #define DEBUG_CONTROL_FLOW          0
+#define DEBUG_CAN_COMMANDS          0
 
 // CAN Test Mode - set to 1 to enable CAN testing without motor commands
 #define CAN_TEST_MODE               0
@@ -100,6 +101,12 @@ void main_store_backup_data(void) {
 #define DEBUG_FLOW(fmt, ...) ESP_LOGI(TAG, "[FLOW] " fmt, ##__VA_ARGS__)
 #else
 #define DEBUG_FLOW(fmt, ...)
+#endif
+
+#if DEBUG_CAN_COMMANDS
+#define DEBUG_CAN_CMD(fmt, ...) ESP_LOGI(TAG, "[CAN_CMD] " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_CAN_CMD(fmt, ...)
 #endif
 
 #if CAN_TEST_MODE
@@ -243,6 +250,9 @@ static void crsf_control_task(void *pvParameters) {
     uint32_t last_encoder_print = 0;
     uint32_t last_stack_check = 0;
     uint32_t last_vesc_debug = 0;  // Rate limit VESC debug messages
+    uint32_t last_position_debug = 0;  // Rate limit position control debug messages
+    uint32_t last_control_flow_debug = 0;  // Rate limit control flow debug messages
+    uint32_t last_can_cmd_debug = 0;  // Rate limit CAN command debug messages
     
     // VESC position control variables
     float vesc_current_position = 0.0f;
@@ -277,17 +287,66 @@ static void crsf_control_task(void *pvParameters) {
         
         // Request VESC position every 200ms for responsive control
         // VESC sends status messages automatically - we just check if we have recent data
+        can_status_msg *vesc_status_1 = comm_can_get_status_msg_id(CAN_VESC_ID);
         can_status_msg_4 *vesc_status = comm_can_get_status_msg_4_id(CAN_VESC_ID);
+        
+        // Check for VESC faults and status
+        bool vesc_has_fault = false;
+        float vesc_rpm = 0.0f;
+        float vesc_current = 0.0f;
+        float vesc_duty = 0.0f;
+        float vesc_temp_fet = 0.0f;
+        float vesc_temp_motor = 0.0f;
+        float vesc_current_in = 0.0f;
+        
+        if (vesc_status_1) {
+            uint32_t age_ms_1 = current_time - (vesc_status_1->rx_time * portTICK_PERIOD_MS);
+            if (age_ms_1 < 500) {
+                vesc_rpm = vesc_status_1->rpm;
+                vesc_current = vesc_status_1->current;
+                vesc_duty = vesc_status_1->duty;
+                
+                // Check for basic fault conditions
+                if (fabsf(vesc_current) > 80.0f) {  // High current fault
+                    vesc_has_fault = true;
+                    ESP_LOGW(TAG, "[VESC_FAULT] High current: %.2f A", vesc_current);
+                }
+                if (fabsf(vesc_duty) > 0.95f) {  // Duty cycle saturation
+                    vesc_has_fault = true;
+                    ESP_LOGW(TAG, "[VESC_FAULT] Duty saturation: %.2f%%", vesc_duty * 100.0f);
+                }
+            }
+        }
+        
         if (vesc_status) {
             uint32_t age_ms = current_time - (vesc_status->rx_time * portTICK_PERIOD_MS);
             if (age_ms < 300) {
                 // We have recent VESC position data (within 300ms)
                 vesc_current_position = vesc_status->pid_pos_now;
                 vesc_position_valid = true;
+                vesc_temp_fet = vesc_status->temp_fet;
+                vesc_temp_motor = vesc_status->temp_motor;
+                vesc_current_in = vesc_status->current_in;
+                
+                // Check for temperature faults
+                if (vesc_temp_fet > 80.0f) {  // FET overtemp
+                    vesc_has_fault = true;
+                    ESP_LOGW(TAG, "[VESC_FAULT] FET overtemp: %.1f°C", vesc_temp_fet);
+                }
+                if (vesc_temp_motor > 100.0f) {  // Motor overtemp
+                    vesc_has_fault = true;
+                    ESP_LOGW(TAG, "[VESC_FAULT] Motor overtemp: %.1f°C", vesc_temp_motor);
+                }
+                
                 // Rate limit VESC debug messages to every 2 seconds
                 if (current_time - last_vesc_debug > 2000) {
-                    DEBUG_VESC("VESC pos: %.3f rev, age: %lums", 
-                              vesc_current_position, age_ms);
+                    DEBUG_VESC("VESC pos: %.3f rev, RPM: %.0f, Current: %.2fA, Temp: %.1f°C, Fault: %s", 
+                              vesc_current_position, vesc_rpm, vesc_current, vesc_temp_fet,
+                              vesc_has_fault ? "YES" : "NO");
+                    if (vesc_has_fault) {
+                        ESP_LOGW(TAG, "[VESC_STATUS] Detailed - RPM: %.0f, Current: %.2fA, Duty: %.1f%%, Temp FET: %.1f°C, Temp Motor: %.1f°C", 
+                                 vesc_rpm, vesc_current, vesc_duty * 100.0f, vesc_temp_fet, vesc_temp_motor);
+                    }
                     last_vesc_debug = current_time;
                 }
             } else {
@@ -330,10 +389,13 @@ static void crsf_control_task(void *pvParameters) {
             
             // Print channel data for debugging
             if (current_time - last_print > CRSF_DEBUG_PRINT_RATE_MS) {
-                DEBUG_CRSF("Channels: CH1=%d CH2=%d CH3=%d CH4=%d CH5=%d Connected=%s Failsafe=%s",
+                uint32_t last_update = crsf_get_last_update_time();
+                uint32_t age_ms = current_time - last_update;
+                DEBUG_CRSF("Channels: CH1=%d CH2=%d CH3=%d CH4=%d CH5=%d Connected=%s Armed=%s Age=%lums",
                          channels[0], channels[1], channels[2], channels[3], channels[4],
                          crsf_is_connected() ? "YES" : "NO",
-                         crsf_is_failsafe() ? "YES" : "NO");
+                         crsf_is_armed() ? "YES" : "NO",
+                         age_ms);
                 last_print = current_time;
             }
             
@@ -350,30 +412,43 @@ static void crsf_control_task(void *pvParameters) {
             // Send motor commands based on CRSF input and encoder feedback
             #if CAN_TEST_MODE
             DEBUG_CAN_TEST("CAN TEST MODE: Skipping motor commands - would send based on CRSF/encoder data");
-            DEBUG_CAN_TEST("CRSF Connected: %s, Failsafe: %s, Armed: %s", 
+            DEBUG_CAN_TEST("CRSF Connected: %s, Armed: %s", 
                           crsf_is_connected() ? "YES" : "NO",
-                          crsf_is_failsafe() ? "YES" : "NO",
                           crsf_is_armed() ? "YES" : "NO");
-            if (crsf_is_connected() && !crsf_is_failsafe() && crsf_is_armed()) {
-                float crsf_target_degrees = (crsf_channel_to_normalized(1) - 0.5f) * 360.0f;
+            if (crsf_is_connected() && crsf_is_armed()) {
+                float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
+                float angle_range = MAX_ANGLE - MIN_ANGLE;
+                float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
                 float encoder_degrees = encoder_get_angle_deg();
                 DEBUG_CAN_TEST("Would command - CRSF target: %.1f°, Encoder: %.1f°, VESC valid: %s", 
                               crsf_target_degrees, encoder_degrees, vesc_position_valid ? "YES" : "NO");
             }
             #else
             // Normal operation - send actual motor commands
-            if (crsf_is_connected() && !crsf_is_failsafe()) {
-                DEBUG_FLOW("CRSF connected, no failsafe");
+            if (crsf_is_connected()) {
+                // Rate limit control flow debug to every 2 seconds
+                if (current_time - last_control_flow_debug > 2000) {
+                    DEBUG_FLOW("CRSF connected");
+                    last_control_flow_debug = current_time;
+                }
                 // Check if armed using utility function
                 if (crsf_is_armed()) {
-                    DEBUG_FLOW("System ARMED - proceeding with control");
+                    // Rate limit control flow debug to every 2 seconds
+                    if (current_time - last_control_flow_debug > 2000) {
+                        DEBUG_FLOW("System ARMED - proceeding with control");
+                    }
                     // Position control logic
-                    // Only proceed with position control if we have valid VESC position
-                    if (vesc_position_valid) {
-                        DEBUG_FLOW("Using position control mode");
-                        // Convert CRSF channel to target angle (using channel 1 for position control)
-                        // CRSF channels are normalized 0.0 to 1.0, convert to -180 to +180 degrees
-                        float crsf_target_degrees = (crsf_channel_to_normalized(1) - 0.5f) * 360.0f;
+                    // Only proceed with position control if we have valid VESC position AND no faults
+                    if (vesc_position_valid && !vesc_has_fault) {
+                        // Rate limit control flow debug to every 2 seconds
+                        if (current_time - last_control_flow_debug > 2000) {
+                            DEBUG_FLOW("Using position control mode");
+                        }
+                        // Convert CRSF channel to target angle (using board-configured control channel)
+                        // CRSF channels are normalized -1.0 to +1.0, convert to 0.0 to 1.0, then to board-specific angle range
+                        float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
+                        float angle_range = MAX_ANGLE - MIN_ANGLE;
+                        float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
                         
                         // Get current encoder position in degrees
                         float encoder_degrees = encoder_get_angle_deg();
@@ -389,33 +464,79 @@ static void crsf_control_task(void *pvParameters) {
                         float vesc_target_position_revolutions = vesc_target_position_degrees / 360.0f;
                         
                         // Send position command to VESC (in revolutions)
+                        // Rate limit CAN command debug to every 2 seconds
+                        if (current_time - last_can_cmd_debug > 2000) {
+                            DEBUG_CAN_CMD("Sending position command: %.3f rev to VESC ID %d", vesc_target_position_revolutions, CAN_VESC_ID);
+                            last_can_cmd_debug = current_time;
+                        }
                         comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_target_position_revolutions);
                         
-                        DEBUG_POS("CRSF: %.1f°, Encoder: %.1f°, Error: %.1f°, Gear Error: %.1f°, VESC Target: %.3f rev (%.1f°)", 
-                                crsf_target_degrees, encoder_degrees, position_error, gear_compensated_error,
-                                vesc_target_position_revolutions, vesc_target_position_degrees);
+                        // Rate limit position control debug messages to every 1 second
+                        if (current_time - last_position_debug > 1000) {
+                            DEBUG_POS("CRSF: %.1f°, Encoder: %.1f°, Error: %.1f°, VESC Target: %.3f rev, RPM: %.0f", 
+                                    crsf_target_degrees, encoder_degrees, position_error,
+                                    vesc_target_position_revolutions, vesc_rpm);
+                            last_position_debug = current_time;
+                        }
+                    } else if (vesc_has_fault) {
+                        // VESC has fault - stop motor for safety
+                        ESP_LOGW(TAG, "[SAFETY] VESC fault detected - stopping motor");
+                        comm_can_set_current(CAN_VESC_ID, 0.0f);
+                        // Rate limit control flow debug to every 2 seconds
+                        if (current_time - last_control_flow_debug > 2000) {
+                            DEBUG_FLOW("VESC fault mode - motor stopped");
+                        }
                     } else {
-                        DEBUG_FLOW("Using current control mode (no VESC position)");
+                        // Rate limit control flow debug to every 2 seconds
+                        if (current_time - last_control_flow_debug > 2000) {
+                            DEBUG_FLOW("Using current control mode (no VESC position)");
+                        }
                         // No valid VESC position - fallback to current control
                         float throttle_normalized = crsf_channel_to_normalized(CRSF_THROTTLE_CHANNEL);
                         float current_command = throttle_normalized * CRSF_MAX_CURRENT_AMPS;
+                        // Rate limit CAN command debug to every 2 seconds
+                        if (current_time - last_can_cmd_debug > 2000) {
+                            DEBUG_CAN_CMD("Sending current command: %.2f A to VESC ID %d (throttle: %.2f)", current_command, CAN_VESC_ID, throttle_normalized);
+                            last_can_cmd_debug = current_time;
+                        }
                         comm_can_set_current(CAN_VESC_ID, current_command);
-                        DEBUG_POS("Current control: %.2f A (throttle: %.2f)", current_command, throttle_normalized);
+                        // Rate limit current control debug messages to every 1 second
+                        if (current_time - last_position_debug > 1000) {
+                            DEBUG_POS("Current control: %.2f A (throttle: %.2f)", current_command, throttle_normalized);
+                            last_position_debug = current_time;
+                        }
                     }
                 } else {
-                    DEBUG_FLOW("System DISARMED - sending zero current");
+                    // Rate limit control flow debug to every 2 seconds
+                    if (current_time - last_control_flow_debug > 2000) {
+                        DEBUG_FLOW("System DISARMED - sending zero current");
+                    }
                     // Disarmed - send zero current
+                    // Rate limit CAN command debug to every 2 seconds
+                    if (current_time - last_can_cmd_debug > 2000) {
+                        DEBUG_CAN_CMD("Sending zero current to VESC ID %d", CAN_VESC_ID);
+                        last_can_cmd_debug = current_time;
+                    }
                     comm_can_set_current(CAN_VESC_ID, 0.0f);
                 }
             } else {
-                DEBUG_FLOW("CRSF disconnected or failsafe - applying failsafe behavior");
-                // No connection or failsafe - apply failsafe behavior
+                // Rate limit control flow debug to every 2 seconds
+                if (current_time - last_control_flow_debug > 2000) {
+                    DEBUG_FLOW("CRSF disconnected - applying safety behavior");
+                }
+                // No connection - apply safety behavior
                 if (CRSF_FAILSAFE_ENABLE_BRAKE) {
                     comm_can_set_current_brake(CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-                    DEBUG_FLOW("Failsafe: brake current %.2f A", CRSF_FAILSAFE_BRAKE_CURRENT);
+                    // Rate limit control flow debug to every 2 seconds
+                    if (current_time - last_control_flow_debug > 2000) {
+                        DEBUG_FLOW("Safety: brake current %.2f A", CRSF_FAILSAFE_BRAKE_CURRENT);
+                    }
                 } else {
                     comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
-                    DEBUG_FLOW("Failsafe: current %.2f A", CRSF_FAILSAFE_CURRENT);
+                    // Rate limit control flow debug to every 2 seconds
+                    if (current_time - last_control_flow_debug > 2000) {
+                        DEBUG_FLOW("Safety: current %.2f A", CRSF_FAILSAFE_CURRENT);
+                    }
                 }
             }
             #endif // CAN_TEST_MODE

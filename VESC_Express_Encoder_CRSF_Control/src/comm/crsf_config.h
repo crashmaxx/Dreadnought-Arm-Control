@@ -38,6 +38,9 @@
 #define CRSF_UART_BUFFER_SIZE       256             // UART buffer size
 #define CRSF_UART_QUEUE_SIZE        10              // UART event queue size
 
+// Debug Configuration - for testing with problematic CRSF failsafe detection
+#define CRSF_IGNORE_BUILTIN_FAILSAFE 1              // Set to 1 to ignore CRSF packet failsafe bit (for debugging)
+
 // Control Configuration
 #define CRSF_CONTROL_UPDATE_RATE_HZ 100             // Control loop update rate
 #define CRSF_DEBUG_PRINT_RATE_MS    500             // Debug print interval
