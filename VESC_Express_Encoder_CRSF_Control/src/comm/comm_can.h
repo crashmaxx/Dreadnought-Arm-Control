@@ -83,9 +83,10 @@ void comm_can_set_pos_ki(uint8_t controller_id, float ki);
 void comm_can_set_pos_kd(uint8_t controller_id, float kd);
 void comm_can_set_pos_filter(uint8_t controller_id, float filter);
 void comm_can_set_pos_floatingpoint(uint8_t controller_id, float pos);
+void comm_can_set_pos_floatingpoint_with_vel(uint8_t controller_id, float pos, float max_vel);
 void comm_can_set_max_sp_vel(uint8_t controller_id, float max_vel);
 void comm_can_set_max_sp_accel(uint8_t controller_id, float max_accel);
 void comm_can_set_max_sp_decel(uint8_t controller_id, float max_decel);
-void comm_can_set_current_pid_pos(uint8_t controller_id, float current, float pos);
+void comm_can_set_current_pid_pos(uint8_t controller_id, float pos, bool store);
 
 #endif /* MAIN_COMM_CAN_H_ */

@@ -298,6 +298,86 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				}
 				break;
 
+			case CAN_PACKET_UPDATE_PID_POS_OFFSET: {
+				ind = 0;
+				float angle_now = buffer_get_float32(data8, 1e4, &ind);
+				bool store = data8[ind++];
+				// ESP32 implementation would handle this differently than STM32 VESC
+				// For now, just acknowledge receipt
+			} break;
+
+			case CAN_PACKET_POLL_ROTOR_POS: {
+				uint8_t buffer[4];
+				int32_t index = 0;
+				// ESP32 would need encoder reading implementation
+				buffer_append_int32(buffer, 0, &index); // Placeholder
+				comm_can_transmit_eid(backup.config.controller_id |
+						((uint32_t)CAN_PACKET_POLL_ROTOR_POS << 8), (uint8_t*)buffer, 4);
+			} break;
+
+			case CAN_PACKET_SET_POS_KP: {
+				ind = 0;
+				float kp = buffer_get_float32_auto(data8, &ind);
+				// ESP32 implementation would store this differently than STM32 VESC
+				// For now, just acknowledge receipt
+			}	break;
+
+			case CAN_PACKET_SET_POS_KI: {
+				ind = 0;
+				float ki = buffer_get_float32_auto(data8, &ind);
+				// ESP32 implementation would store this differently than STM32 VESC
+				// For now, just acknowledge receipt
+			}	break;
+
+			case CAN_PACKET_SET_POS_KD: {
+				ind = 0;
+				float kd = buffer_get_float32_auto(data8, &ind);
+				// ESP32 implementation would store this differently than STM32 VESC
+				// For now, just acknowledge receipt
+			}	break;
+
+			case CAN_PACKET_SET_POS_FILTER: {
+				ind = 0;
+				float filter = buffer_get_float32_auto(data8, &ind);
+				// ESP32 implementation would store this differently than STM32 VESC
+				// For now, just acknowledge receipt
+			}	break;
+
+			case CAN_PACKET_SET_POS_FLOATINGPOINT: {
+				ind = 0;
+				float pos = buffer_get_float32_auto(data8, &ind);
+				if (len >= 8) {
+					float max_vel = buffer_get_float32_auto(data8, &ind);
+					// ESP32 would handle max velocity setting
+				}
+				// ESP32 would handle position setting
+			}	break;
+
+			case CAN_PACKET_SET_MAX_SP_VEL: {
+				ind = 0;
+				float max_vel = buffer_get_float32_auto(data8, &ind);
+				// ESP32 implementation would handle this differently than STM32 VESC
+			}	break;
+
+			case CAN_PACKET_SET_MAX_SP_ACCEL: {
+				ind = 0;
+				float max_accel = buffer_get_float32_auto(data8, &ind);
+				// ESP32 implementation would handle this differently than STM32 VESC
+			}	break;
+
+			case CAN_PACKET_SET_MAX_SP_DECEL: {
+				ind = 0;
+				float max_decel = buffer_get_float32_auto(data8, &ind);
+				// ESP32 implementation would handle this differently than STM32 VESC
+			}	break;
+
+			case CAN_PACKET_SET_CURRENT_PID_POS: {
+				ind = 0;
+				float pos = buffer_get_float32_auto(data8, &ind);
+				bool store = data8[ind++];
+				// ESP32 implementation would handle this differently than STM32 VESC
+			} break;
+
 			default:
 				break;
 		}
@@ -1514,6 +1594,16 @@ void comm_can_set_pos_floatingpoint(uint8_t controller_id, float pos) {
 	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_SET_POS_FLOATINGPOINT << 8), buffer, send_index);
 }
 
+void comm_can_set_pos_floatingpoint_with_vel(uint8_t controller_id, float pos, float max_vel) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+
+	buffer_append_float32_auto(buffer, pos, &send_index);
+	buffer_append_float32_auto(buffer, max_vel, &send_index);
+
+	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_SET_POS_FLOATINGPOINT << 8), buffer, send_index);
+}
+
 void comm_can_set_max_sp_vel(uint8_t controller_id, float max_vel) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
@@ -1541,12 +1631,12 @@ void comm_can_set_max_sp_decel(uint8_t controller_id, float max_decel) {
 	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_SET_MAX_SP_DECEL << 8), buffer, send_index);
 }
 
-void comm_can_set_current_pid_pos(uint8_t controller_id, float current, float pos) {
+void comm_can_set_current_pid_pos(uint8_t controller_id, float pos, bool store) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
 
-	buffer_append_float32_auto(buffer, current, &send_index);
 	buffer_append_float32_auto(buffer, pos, &send_index);
+	buffer[send_index++] = store;
 
 	comm_can_transmit_eid(controller_id | ((uint32_t)CAN_PACKET_SET_CURRENT_PID_POS << 8), buffer, send_index);
 }

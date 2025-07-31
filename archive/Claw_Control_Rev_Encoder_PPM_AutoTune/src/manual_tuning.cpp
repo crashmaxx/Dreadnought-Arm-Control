@@ -1,15 +1,14 @@
 #include "manual_tuning.h"
 #include "shared_globals.h"
-#include "config_manager.h"
 
 // Manual tuning state
 bool manualTuningEnabled = false;
-double testKp = 1.0;
-double testKi = 0.0;
-double testKd = 0.1;
+float testKp = 1.0;
+float testKi = 0.0;
+float testKd = 0.1;
 unsigned long tuningStartTime = 0;
-double startPosition = 0;
-double testTarget = 0;
+float startPosition = 0;
+float testTarget = 0;
 
 // Start manual step response test
 void startManualTuning() {
@@ -58,8 +57,6 @@ void applyManualTuning() {
     Serial.println("=== TUNING APPLIED ===");
     Serial.printf("New PID: Kp=%.2f, Ki=%.3f, Kd=%.3f\n", Kp, Ki, Kd);
     
-    // Save to config
-    saveConfig();
     stopManualTuning();
   }
 }

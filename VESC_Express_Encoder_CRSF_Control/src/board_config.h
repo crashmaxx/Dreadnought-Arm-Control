@@ -45,13 +45,14 @@
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
   
   // CAN Configuration
-  #define CAN_VESC_ID 74  // Left claw VESC controller ID
-  #define CAN_ESP32_ID 4  // ESP32 controller ID (VESC_ID + 100)
+  #define CAN_VESC_ID 0  // Left claw VESC controller ID
+  #define CAN_ESP32_ID 4  // ESP32 controller ID
 
   // Control parameters from Claw_Control
   #define CONTROL_CHANNEL 4
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 800.0f    // Maximum velocity for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
   // ESP-NOW telemetry configuration
@@ -77,6 +78,7 @@
   #define CONTROL_CHANNEL 4
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 800.0f    // Maximum velocity for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -99,6 +101,7 @@
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 600.0f    // Maximum velocity for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -121,6 +124,7 @@
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 600.0f    // Maximum velocity for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -143,6 +147,7 @@
   #define CONTROL_CHANNEL 2
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 400.0f    // Maximum velocity for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -165,6 +170,7 @@
   #define CONTROL_CHANNEL 2
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 400.0f    // Maximum velocity for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -187,6 +193,7 @@
   #define CONTROL_CHANNEL 1
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 180.0f
+  #define MAX_VEL 200.0f    // Maximum velocity for position commands (slower for shoulder)
   #define GEAR_RATIO 89.6f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -209,6 +216,7 @@
   #define CONTROL_CHANNEL 1
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 180.0f
+  #define MAX_VEL 200.0f    // Maximum velocity for position commands (slower for shoulder)
   #define GEAR_RATIO 89.6f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -228,6 +236,7 @@
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 1000.0f   // Maximum velocity for position commands
   #define GEAR_RATIO 1.0f  // Motor to joint encoder reduction ratio
   
 #endif
@@ -247,6 +256,7 @@
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 1000.0f   // Maximum velocity for position commands
   #define GEAR_RATIO 1.0f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -269,6 +279,7 @@
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 1000.0f   // Maximum velocity for position commands
   #define GEAR_RATIO 1.0f  // Motor to joint encoder reduction ratio
 
 #endif
@@ -292,6 +303,7 @@
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
+  #define MAX_VEL 1000.0f   // Maximum velocity for position commands
   #define GEAR_RATIO 1.0f  // Motor to joint encoder reduction ratio
   
 #endif
@@ -337,13 +349,18 @@
   #define GEAR_RATIO 1.0f
 #endif
 
+#ifndef MAX_VEL
+  #define MAX_VEL 1000.0f
+#endif
+
 // CAN defaults
 #ifndef CAN_VESC_ID
-  #define CAN_VESC_ID 115
+  #define CAN_VESC_ID 0
 #endif
 
 #ifndef CAN_ESP32_ID
-  #define CAN_ESP32_ID 215  // Default ESP32 controller ID if not specified
+  #define CAN_ESP32_ID 1
 #endif
+
 
 #endif /* BOARD_CONFIG_H_ */

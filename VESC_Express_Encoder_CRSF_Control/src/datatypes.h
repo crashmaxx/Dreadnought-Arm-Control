@@ -353,7 +353,11 @@ typedef enum {
 	CAN_PACKET_SET_POS_KI,
 	CAN_PACKET_SET_POS_KD,
 	CAN_PACKET_SET_POS_FILTER,
-	CAN_PACKET_SET_POS_FLOATINGPOINT,
+	CAN_PACKET_RESERVED_64,  // Reserved slot to align with VESC protocol
+	CAN_PACKET_RESERVED_65,  // Reserved slot to align with VESC protocol  
+	CAN_PACKET_RESERVED_66,  // Reserved slot to align with VESC protocol
+	CAN_PACKET_RESERVED_67,  // Reserved slot to align with VESC protocol
+	CAN_PACKET_SET_POS_FLOATINGPOINT,  // Now at position 68
 	CAN_PACKET_SET_MAX_SP_VEL,
 	CAN_PACKET_SET_MAX_SP_ACCEL,
 	CAN_PACKET_SET_MAX_SP_DECEL,

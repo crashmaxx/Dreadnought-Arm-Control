@@ -1,8 +1,6 @@
 #include "serial_commands.h"
-#include "config_manager.h"
 #include "pid_autotune.h"
 #include "manual_tuning.h"
-#include "smart_tuning.h"
 
 // Print all CRSF channel values
 void printChannels() {
@@ -16,8 +14,7 @@ void printChannels() {
 // Show available commands
 void showAvailableCommands() {
   Serial.println("Unknown command. Available commands:");
-  Serial.println("  autotune - Start/Stop PID AutoTune (waits for arm switch)");
-  Serial.println("  smart - Start smart automated tuning");
+  Serial.println("  autotune - Start/Stop sTune AutoTune (waits for arm switch)");
   Serial.println("  manual - Start manual step-response tuning");
   Serial.println("  kp+/kp- - Increase/decrease Kp during manual tuning");
   Serial.println("  ki+/ki- - Increase/decrease Ki during manual tuning");  
@@ -25,11 +22,7 @@ void showAvailableCommands() {
   Serial.println("  test - Run new step test during manual tuning");
   Serial.println("  apply - Apply current tuning values");
   Serial.println("  cancel - Cancel active tuning");
-  Serial.println("  save - Save config to EEPROM");
-  Serial.println("  load - Load config from EEPROM");
   Serial.println("  debug - Toggle debug output on/off");
-  Serial.println("  export - Export config to JSON");
-  Serial.println("  import - Import config from JSON");
   Serial.println("  status - Show current configuration");
 }
 
@@ -40,23 +33,13 @@ void handleSerialCommands() {
     command.trim();
     command.toLowerCase();
     
-    if (command == "export") {
-      exportConfigJSON();
-    } else if (command == "import") {
-      importConfigJSON();
-    } else if (command == "autotune") {
+    if (command == "autotune") {
       if (autoTuneEnabled) {
         Serial.println("Stopping AutoTune...");
         stopAutoTune();
       } else {
         Serial.println("Starting AutoTune...");
         startAutoTune();
-      }
-    } else if (command == "smart") {
-      if (smartTuningEnabled) {
-        Serial.println("Smart tuning already active");
-      } else {
-        startSmartTuning();
       }
     } else if (command == "manual") {
       if (manualTuningEnabled) {
@@ -80,26 +63,16 @@ void handleSerialCommands() {
     } else if (command == "test") {
       runStepTest();
     } else if (command == "apply") {
-      if (smartTuningEnabled) {
-        applySmartTuning();
-      } else if (manualTuningEnabled) {
+      if (manualTuningEnabled) {
         applyManualTuning();
       } else {
         Serial.println("No active tuning to apply");
       }
     } else if (command == "cancel") {
-      if (smartTuningEnabled) {
-        stopSmartTuning();
-      } else if (manualTuningEnabled) {
+      if (manualTuningEnabled) {
         stopManualTuning();
       } else {
         Serial.println("No active tuning to cancel");
-      }
-    } else if (command == "save") {
-      saveConfig();
-    } else if (command == "load") {
-      if (loadConfig()) {
-        myPID.SetTunings(Kp, Ki, Kd);
       }
     } else if (command == "debug") {
       debugEnabled = !debugEnabled;
@@ -113,7 +86,6 @@ void handleSerialCommands() {
       Serial.printf("Current Position: %.1f degrees\n", pos_deg);
       Serial.printf("Target Position: %.1f degrees\n", target_deg);
       Serial.printf("AutoTune: %s\n", autoTuneEnabled ? (waitingForArm ? "WAITING FOR ARM" : "RUNNING") : "STOPPED");
-      Serial.printf("Smart Tuning: %s\n", smartTuningEnabled ? (smartWaitingForArm ? "WAITING FOR ARM" : "RUNNING") : "STOPPED");
       Serial.printf("Debug Output: %s\n", debugEnabled ? "ENABLED" : "DISABLED");
     } else if (command.length() > 0) {
       showAvailableCommands();
@@ -144,16 +116,6 @@ void printDebugInfo(int ppm_out) {
       } else {
         Serial.print("AutoTune running... Time: ");
         Serial.print((now - tuneStartTime) / 1000);
-        Serial.println("s");
-      }
-    } else if (smartTuningEnabled) {
-      if (smartWaitingForArm) {
-        Serial.print("Smart tuning waiting for arm switch... Time: ");
-        Serial.print((now - smartStartTime) / 1000);
-        Serial.println("s");
-      } else {
-        Serial.print("Smart tuning running... Time: ");
-        Serial.print((now - smartStartTime) / 1000);
         Serial.println("s");
       }
     } else {
