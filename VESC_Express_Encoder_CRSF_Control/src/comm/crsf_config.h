@@ -43,6 +43,7 @@
 
 // Control Configuration
 #define CRSF_CONTROL_UPDATE_RATE_HZ 100             // Control loop update rate
+#define CONTROL_TASK_DELAY_MS (1000 / CRSF_CONTROL_UPDATE_RATE_HZ)
 #define CRSF_DEBUG_PRINT_RATE_MS    500             // Debug print interval
 #define CRSF_ARM_CHANNEL            CRSF_CHANNEL_AUX1  // Channel used for arming
 #define CRSF_ARM_THRESHOLD          1700            // PWM threshold for armed state

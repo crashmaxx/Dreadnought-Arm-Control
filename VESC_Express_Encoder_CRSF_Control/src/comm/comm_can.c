@@ -295,89 +295,8 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 					ping_hw_last = data8[1];
 				} else {
 					ping_hw_last = HW_TYPE_VESC_BMS;
-				}
-				break;
-
-			case CAN_PACKET_UPDATE_PID_POS_OFFSET: {
-				ind = 0;
-				float angle_now = buffer_get_float32(data8, 1e4, &ind);
-				bool store = data8[ind++];
-				// ESP32 implementation would handle this differently than STM32 VESC
-				// For now, just acknowledge receipt
-			} break;
-
-			case CAN_PACKET_POLL_ROTOR_POS: {
-				uint8_t buffer[4];
-				int32_t index = 0;
-				// ESP32 would need encoder reading implementation
-				buffer_append_int32(buffer, 0, &index); // Placeholder
-				comm_can_transmit_eid(backup.config.controller_id |
-						((uint32_t)CAN_PACKET_POLL_ROTOR_POS << 8), (uint8_t*)buffer, 4);
-			} break;
-
-			case CAN_PACKET_SET_POS_KP: {
-				ind = 0;
-				float kp = buffer_get_float32_auto(data8, &ind);
-				// ESP32 implementation would store this differently than STM32 VESC
-				// For now, just acknowledge receipt
-			}	break;
-
-			case CAN_PACKET_SET_POS_KI: {
-				ind = 0;
-				float ki = buffer_get_float32_auto(data8, &ind);
-				// ESP32 implementation would store this differently than STM32 VESC
-				// For now, just acknowledge receipt
-			}	break;
-
-			case CAN_PACKET_SET_POS_KD: {
-				ind = 0;
-				float kd = buffer_get_float32_auto(data8, &ind);
-				// ESP32 implementation would store this differently than STM32 VESC
-				// For now, just acknowledge receipt
-			}	break;
-
-			case CAN_PACKET_SET_POS_FILTER: {
-				ind = 0;
-				float filter = buffer_get_float32_auto(data8, &ind);
-				// ESP32 implementation would store this differently than STM32 VESC
-				// For now, just acknowledge receipt
-			}	break;
-
-			case CAN_PACKET_SET_POS_FLOATINGPOINT: {
-				ind = 0;
-				float pos = buffer_get_float32_auto(data8, &ind);
-				if (len >= 8) {
-					float max_vel = buffer_get_float32_auto(data8, &ind);
-					// ESP32 would handle max velocity setting
-				}
-				// ESP32 would handle position setting
-			}	break;
-
-			case CAN_PACKET_SET_MAX_SP_VEL: {
-				ind = 0;
-				float max_vel = buffer_get_float32_auto(data8, &ind);
-				// ESP32 implementation would handle this differently than STM32 VESC
-			}	break;
-
-			case CAN_PACKET_SET_MAX_SP_ACCEL: {
-				ind = 0;
-				float max_accel = buffer_get_float32_auto(data8, &ind);
-				// ESP32 implementation would handle this differently than STM32 VESC
-			}	break;
-
-			case CAN_PACKET_SET_MAX_SP_DECEL: {
-				ind = 0;
-				float max_decel = buffer_get_float32_auto(data8, &ind);
-				// ESP32 implementation would handle this differently than STM32 VESC
-			}	break;
-
-			case CAN_PACKET_SET_CURRENT_PID_POS: {
-				ind = 0;
-				float pos = buffer_get_float32_auto(data8, &ind);
-				bool store = data8[ind++];
-				// ESP32 implementation would handle this differently than STM32 VESC
-			} break;
-
+				} break;
+				
 			default:
 				break;
 		}
@@ -562,88 +481,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			}
 		}
 	} break;
-/*
-	case CAN_PACKET_GNSS_TIME: {
-		if (ublox_init_ok()) {
-			break;
-		}
 
-		nmea_state_t *s = nmea_get_state();
-
-		s->gga.ms_today = buffer_get_int32(data8, &ind);
-		s->rmc.yy = buffer_get_int16(data8, &ind);
-		s->rmc.mo = data8[ind++];
-		s->rmc.dd = data8[ind++];
-
-		int ms = s->gga.ms_today % 1000;
-		int ss = (s->gga.ms_today / 1000) % 60;
-		int mm = (s->gga.ms_today / 1000 / 60) % 60;
-		int hh = (s->gga.ms_today / 1000 / 60 / 60) % 24;
-
-		s->rmc.hh = hh;
-		s->rmc.mm = mm;
-		s->rmc.ss = ss;
-		s->rmc.ms = ms;
-
-		s->gga_cnt++;
-		s->rmc_cnt++;
-		s->gga.update_time = xTaskGetTickCount();
-		s->rmc.update_time = xTaskGetTickCount();
-	} break;
-
-	case CAN_PACKET_GNSS_LAT: {
-		if (ublox_init_ok()) {
-			break;
-		}
-
-		nmea_state_t *s = nmea_get_state();
-
-		ind = 0;
-		volatile double tmp = buffer_get_double64(data8, D(1e16), &ind);
-
-		portDISABLE_INTERRUPTS();
-		s->gga.lat = tmp;
-		portENABLE_INTERRUPTS();
-
-		s->gga_cnt++;
-		s->gga.update_time = xTaskGetTickCount();
-	} break;
-
-	case CAN_PACKET_GNSS_LON: {
-		if (ublox_init_ok()) {
-			break;
-		}
-
-		nmea_state_t *s = nmea_get_state();
-
-		ind = 0;
-		volatile double tmp = buffer_get_double64(data8, D(1e16), &ind);
-
-		portDISABLE_INTERRUPTS();
-		s->gga.lon = tmp;
-		portENABLE_INTERRUPTS();
-
-		s->gga_cnt++;
-		s->gga.update_time = xTaskGetTickCount();
-	} break;
-
-	case CAN_PACKET_GNSS_ALT_SPEED_HDOP: {
-		if (ublox_init_ok()) {
-			break;
-		}
-
-		nmea_state_t *s = nmea_get_state();
-
-		s->gga.height = buffer_get_float32_auto(data8, &ind);
-		s->rmc.speed = buffer_get_float16(data8, 1.0e2, &ind);
-		s->gga.h_dop = buffer_get_float16(data8, 1.0e2, &ind);
-
-		s->gga_cnt++;
-		s->rmc_cnt++;
-		s->gga.update_time = xTaskGetTickCount();
-		s->rmc.update_time = xTaskGetTickCount();
-	} break;
-*/
 	case CAN_PACKET_UPDATE_BAUD: {
 		ind = 0;
 		int kbits = buffer_get_int16(data8, &ind);
@@ -652,7 +490,6 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 		if (baud != CAN_BAUD_INVALID) {
 			backup.config.can_baud_rate = baud;
-			main_store_backup_data();
 			comm_can_update_baudrate(delay_msec);
 		}
 	} break;

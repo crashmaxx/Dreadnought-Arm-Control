@@ -35,9 +35,6 @@
 #include "main.h"
 #include <math.h>
 
-// CRSF Configuration from config header
-#define CONTROL_TASK_DELAY_MS (1000 / CRSF_CONTROL_UPDATE_RATE_HZ)
-
 // Global backup variable (required by comm_can.c)
 volatile backup_data backup = {
     .controller_id_init_flag = VAR_INIT_CODE,
@@ -53,13 +50,6 @@ volatile backup_data backup = {
         .ble_mode = BLE_MODE_DISABLED
     }
 };
-
-// Stub function for backup data storage (required by comm_can.c)
-void main_store_backup_data(void) {
-    // For ESP32-C3 minimal implementation, we don't need persistent storage
-    // This is just a stub to satisfy the linker
-    ESP_LOGI("BACKUP", "Backup data store requested (stub implementation)");
-}
 
 // Debug configuration - set to 1 to enable, 0 to disable
 #define DEBUG_POSITION_CONTROL      1
