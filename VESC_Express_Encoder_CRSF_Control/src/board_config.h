@@ -47,8 +47,8 @@
 
   // Control parameters from Claw_Control
   #define CONTROL_CHANNEL 4
-  #define MIN_ANGLE 0.0f
-  #define MAX_ANGLE 359.0f
+  #define MIN_ANGLE -180.0f
+  #define MAX_ANGLE 180.0f
   #define MAX_VEL 800.0f    // Maximum velocity for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
