@@ -31,6 +31,7 @@
 #include "freertos/task.h"
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 
 #include "main.h"
 #include <math.h>
@@ -52,13 +53,15 @@ volatile backup_data backup = {
 };
 
 // Debug configuration - set to 1 to enable, 0 to disable
-#define DEBUG_POSITION_CONTROL      1  // Position control debugging
+// These control what debug messages are shown in the serial monitor
+#define DEBUG_POSITION_CONTROL      0  // Position control debugging
 #define DEBUG_ENCODER_DATA          0  // Encoder data debugging
-#define DEBUG_VESC_STATUS           1  // VESC status debugging
+#define DEBUG_VESC_STATUS           0  // VESC status debugging
 #define DEBUG_CRSF_CHANNELS         0  // CRSF channel data
-#define DEBUG_CAN_COMMANDS          1  // CAN command transmission
+#define DEBUG_CAN_COMMANDS          0  // CAN command transmission
+#define DEBUG_ESPNOW_TELEMETRY      1  // ESP-NOW telemetry debugging
 
-// CAN Test Mode - set to 1 to enable CAN testing without motor commands
+// CAN Test Mode - set to 1 to enable CAN testing without checking system state
 #define CAN_TEST_MODE               0
 
 // Debug macros
@@ -90,6 +93,12 @@ volatile backup_data backup = {
 #define DEBUG_CAN_CMD(fmt, ...) ESP_LOGI(TAG, "[CAN_CMD] " fmt, ##__VA_ARGS__)
 #else
 #define DEBUG_CAN_CMD(fmt, ...)
+#endif
+
+#if DEBUG_ESPNOW_TELEMETRY
+#define DEBUG_ESPNOW(fmt, ...) ESP_LOGI(TAG, "[ESPNOW] " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_ESPNOW(fmt, ...)
 #endif
 
 #if CAN_TEST_MODE
@@ -278,7 +287,6 @@ static void crsf_control_task(void *pvParameters) {
     uint16_t channels[16];
     uint32_t last_print = 0;
     uint32_t last_encoder_print = 0;
-    uint32_t last_stack_check = 0;
     uint32_t last_vesc_debug = 0;  // Rate limit VESC debug messages
     uint32_t last_position_debug = 0;  // Rate limit position control debug messages
     uint32_t last_can_cmd_debug = 0;  // Rate limit CAN command debug messages
@@ -302,17 +310,6 @@ static void crsf_control_task(void *pvParameters) {
         // Run CAN test mode - reads VESC status and sends harmless packets
         can_test_mode();
         #endif
-        
-        // Check stack usage every 5 seconds
-        if (current_time - last_stack_check > 5000) {
-            UBaseType_t stack_free = uxTaskGetStackHighWaterMark(NULL);
-            if (stack_free < 500) {
-                ESP_LOGW(TAG, "Low stack space: %u bytes free", stack_free);
-            } else {
-                ESP_LOGI(TAG, "Stack health: %u bytes free", stack_free);
-            }
-            last_stack_check = current_time;
-        }
         
         // Request VESC position every 200ms for responsive control
         // VESC sends status messages automatically - we just check if we have recent data
@@ -550,6 +547,37 @@ static void crsf_control_task(void *pvParameters) {
     }
 }
 
+#if ESP_NOW_TELEMETRY_ENABLE
+// ESP-NOW initialization task - runs with larger stack to avoid overflow
+static void espnow_init_task(void *pvParameters) {
+    
+    // Initialize NVS (required for WiFi)
+    DEBUG_ESPNOW("Starting NVS initialization...");
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        DEBUG_ESPNOW("NVS needs erase and reinit...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    DEBUG_ESPNOW("NVS initialized successfully for ESP-NOW");
+    
+    // Initialize WiFi (required for ESP-NOW)
+    DEBUG_ESPNOW("Starting WiFi initialization...");
+    telemetry_wifi_init();
+    DEBUG_ESPNOW("WiFi initialized successfully for ESP-NOW");
+    
+    DEBUG_ESPNOW("Starting ESP-NOW protocol initialization...");
+    if (telemetry_espnow_init() == ESP_OK) {
+        ESP_LOGI(TAG, "ESP-NOW telemetry initialized successfully");  // Always show success
+        DEBUG_ESPNOW("ESP-NOW configured for unicast communication to peer");
+    } else {
+        ESP_LOGW(TAG, "Failed to initialize ESP-NOW telemetry");  // Always show failures
+    }
+    vTaskDelete(NULL);  // Delete this task when done
+}
+#endif
+
 void app_main(void) {
     ESP_LOGI(TAG, "=== VESC Express Encoder CRSF Control Starting ===");
     ESP_LOGI(TAG, "Firmware Version: %d.%d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR, FW_TEST_VERSION_NUMBER);
@@ -672,26 +700,6 @@ void app_main(void) {
     return;
     #endif
 
-    // Initialize ESP-NOW telemetry
-    #if ESP_NOW_TELEMETRY_ENABLE
-    esp_now_telemetry_config_t telemetry_config = {
-        .peer_mac = PEER_MAC_ADDR,
-        .wifi_channel = ESP_NOW_WIFI_CHANNEL,
-        .encrypt = ESP_NOW_ENCRYPT,
-        .recv_callback = telemetry_recv_callback
-    };
-    
-    if (esp_now_telemetry_init(&telemetry_config)) {
-        ESP_LOGI(TAG, "ESP-NOW telemetry initialized successfully");
-        ESP_LOGI(TAG, "Telemetry peer: %02X:%02X:%02X:%02X:%02X:%02X", 
-                 telemetry_config.peer_mac[0], telemetry_config.peer_mac[1], 
-                 telemetry_config.peer_mac[2], telemetry_config.peer_mac[3], 
-                 telemetry_config.peer_mac[4], telemetry_config.peer_mac[5]);
-    } else {
-        ESP_LOGW(TAG, "Failed to initialize ESP-NOW telemetry");
-    }
-    #endif
-
     // Initialize CRSF receiver
     crsf_init(CRSF_UART_NUM, CRSF_TX_PIN, CRSF_RX_PIN, CRSF_BAUDRATE);
     ESP_LOGI(TAG, "CRSF receiver initialized");
@@ -699,6 +707,12 @@ void app_main(void) {
     // Create CRSF control task
     xTaskCreate(crsf_control_task, "crsf_control", CRSF_TASK_STACK_SIZE, NULL, CRSF_TASK_PRIORITY, NULL);
     ESP_LOGI(TAG, "CRSF control task created");
+    
+    // Create ESP-NOW initialization task with large stack (runs once then deletes itself)
+    #if ESP_NOW_TELEMETRY_ENABLE
+    DEBUG_ESPNOW("Creating ESP-NOW initialization task...");
+    xTaskCreate(espnow_init_task, "espnow_init", 8192, NULL, 3, NULL);  // 8KB stack, priority 3
+    #endif
     
     ESP_LOGI(TAG, "Initialization complete - System ready");
     ESP_LOGI(TAG, "Angle Range: %.1f° to %.1f°", MIN_ANGLE, MAX_ANGLE);

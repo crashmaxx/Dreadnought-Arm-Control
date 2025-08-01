@@ -16,6 +16,16 @@
 #include "esp_now.h"
 #include "esp_crc.h"
 #include "comm_espnow.h"
+#include "board_config.h"  // For PEER_MAC_ADDR
+
+// Debug configuration for ESP-NOW telemetry - set to 1 to enable, 0 to disable
+#define DEBUG_ESPNOW_INTERNAL       0  // ESP-NOW internal debugging
+
+#if DEBUG_ESPNOW_INTERNAL
+#define DEBUG_ESPNOW_INT(fmt, ...) ESP_LOGI(TAG, "[ESPNOW_INT] " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_ESPNOW_INT(fmt, ...)
+#endif
 
 // MACSTR and MAC2STR macros for MAC address formatting
 #define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
@@ -69,6 +79,7 @@ static const char *TAG = "espnow_telemetry";
 static QueueHandle_t s_telemetry_espnow_queue = NULL;
 
 static uint8_t s_telemetry_broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+static uint8_t s_telemetry_peer_mac[ESP_NOW_ETH_ALEN] = PEER_MAC_ADDR;  // Specific peer MAC from board config
 static uint16_t s_telemetry_espnow_seq[TELEMETRY_ESPNOW_DATA_MAX] = { 0, 0 };
 
 static void telemetry_espnow_deinit(telemetry_espnow_send_param_t *send_param);
@@ -364,6 +375,16 @@ esp_err_t telemetry_espnow_init(void)
     peer->encrypt = false;
     memcpy(peer->peer_addr, s_telemetry_broadcast_mac, ESP_NOW_ETH_ALEN);
     ESP_ERROR_CHECK( esp_now_add_peer(peer) );
+    
+    // Also add the specific peer MAC address from board config
+    memset(peer, 0, sizeof(esp_now_peer_info_t));
+    peer->channel = CONFIG_ESPNOW_CHANNEL;
+    peer->ifidx = ESPNOW_WIFI_IF;
+    peer->encrypt = false;
+    memcpy(peer->peer_addr, s_telemetry_peer_mac, ESP_NOW_ETH_ALEN);
+    ESP_ERROR_CHECK( esp_now_add_peer(peer) );
+    DEBUG_ESPNOW_INT("Added ESP-NOW peer: "MACSTR, MAC2STR(s_telemetry_peer_mac));
+    
     free(peer);
 
     /* Initialize sending parameters. */
@@ -376,8 +397,8 @@ esp_err_t telemetry_espnow_init(void)
         return ESP_FAIL;
     }
     memset(send_param, 0, sizeof(telemetry_espnow_send_param_t));
-    send_param->unicast = false;
-    send_param->broadcast = true;
+    send_param->unicast = true;   // Use unicast to specific peer
+    send_param->broadcast = false; // Not broadcast
     send_param->state = 0;
     send_param->magic = esp_random();
     send_param->count = CONFIG_ESPNOW_SEND_COUNT;
@@ -392,7 +413,7 @@ esp_err_t telemetry_espnow_init(void)
         esp_now_deinit();
         return ESP_FAIL;
     }
-    memcpy(send_param->dest_mac, s_telemetry_broadcast_mac, ESP_NOW_ETH_ALEN);
+    memcpy(send_param->dest_mac, s_telemetry_peer_mac, ESP_NOW_ETH_ALEN);  // Use specific peer MAC
     telemetry_espnow_data_prepare(send_param);
 
     xTaskCreate(telemetry_espnow_task, "telemetry_espnow_task", 2048, send_param, 4, NULL);
@@ -453,10 +474,10 @@ esp_err_t telemetry_espnow_send_data(const uint8_t *dest_mac, const void *data, 
     free(packet_buffer);
     
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_now_send failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "esp_now_send failed: %s", esp_err_to_name(ret));  // Always show errors
         return ret;
     }
     
-    ESP_LOGI(TAG, "Sent %d bytes to " MACSTR, data_len, MAC2STR(dest_mac));
+    DEBUG_ESPNOW_INT("Sent %d bytes to " MACSTR, data_len, MAC2STR(dest_mac));
     return ESP_OK;
 }

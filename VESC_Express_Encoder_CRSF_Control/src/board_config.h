@@ -34,9 +34,9 @@
 #ifdef BOARD_LEFT_CLAW
   #define BOARD_NAME "Left_Claw"
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID  // Switch to dual hybrid encoder
-  #define ENCODER_PWM_PIN 10      // ESP32-S3 compatible GPIO
-  #define ENCODER_A_PIN 11        // ESP32-S3 compatible GPIO
-  #define ENCODER_B_PIN 12        // ESP32-S3 compatible GPIO
+  #define ENCODER_PWM_PIN 5
+  #define ENCODER_A_PIN 7
+  #define ENCODER_B_PIN 6
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -60,9 +60,9 @@
 #ifdef BOARD_RIGHT_CLAW
   #define BOARD_NAME "Right_Claw"
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID  // Switch to dual hybrid encoder
-  #define ENCODER_PWM_PIN 10      // ESP32-S3 compatible GPIO
-  #define ENCODER_A_PIN 11        // ESP32-S3 compatible GPIO
-  #define ENCODER_B_PIN 12        // ESP32-S3 compatible GPIO
+  #define ENCODER_PWM_PIN 5
+  #define ENCODER_A_PIN 7
+  #define ENCODER_B_PIN 6
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -83,9 +83,9 @@
 #ifdef BOARD_LEFT_ELBOW
   #define BOARD_NAME "Left_Elbow"
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID  // Switch to dual hybrid encoder
-  #define ENCODER_PWM_PIN 10      // ESP32-S3 compatible GPIO
-  #define ENCODER_A_PIN 11        // ESP32-S3 compatible GPIO
-  #define ENCODER_B_PIN 12        // ESP32-S3 compatible GPIO
+  #define ENCODER_PWM_PIN 5
+  #define ENCODER_A_PIN 7
+  #define ENCODER_B_PIN 6
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -106,9 +106,9 @@
 #ifdef BOARD_RIGHT_ELBOW
   #define BOARD_NAME "Right_Elbow"
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID  // Switch to dual hybrid encoder
-  #define ENCODER_PWM_PIN 10      // ESP32-S3 compatible GPIO
-  #define ENCODER_A_PIN 11        // ESP32-S3 compatible GPIO
-  #define ENCODER_B_PIN 12        // ESP32-S3 compatible GPIO
+  #define ENCODER_PWM_PIN 5
+  #define ENCODER_A_PIN 7
+  #define ENCODER_B_PIN 6
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -129,9 +129,9 @@
 #ifdef BOARD_LEFT_UPPER
   #define BOARD_NAME "Left_Upper"
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID  // Switch to dual hybrid encoder
-  #define ENCODER_PWM_PIN 10      // ESP32-S3 compatible GPIO
-  #define ENCODER_A_PIN 11        // ESP32-S3 compatible GPIO
-  #define ENCODER_B_PIN 12        // ESP32-S3 compatible GPIO
+  #define ENCODER_PWM_PIN 5
+  #define ENCODER_A_PIN 7
+  #define ENCODER_B_PIN 6
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -152,9 +152,9 @@
 #ifdef BOARD_RIGHT_UPPER
   #define BOARD_NAME "Right_Upper"
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID  // Switch to dual hybrid encoder
-  #define ENCODER_PWM_PIN 10      // ESP32-S3 compatible GPIO
-  #define ENCODER_A_PIN 11        // ESP32-S3 compatible GPIO
-  #define ENCODER_B_PIN 12        // ESP32-S3 compatible GPIO
+  #define ENCODER_PWM_PIN 5
+  #define ENCODER_A_PIN 7
+  #define ENCODER_B_PIN 6
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -177,10 +177,10 @@
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
   
   // SPI pins for magnetic encoder (ESP32-S3 compatible)
-  #define ENCODER_SPI_CS_PIN 5    // Chip Select
-  #define ENCODER_SPI_MISO_PIN 6  // Master In Slave Out
-  #define ENCODER_SPI_MOSI_PIN 7  // Master Out Slave In
-  #define ENCODER_SPI_CLK_PIN 8   // Clock
+  #define ENCODER_SPI_CS_PIN 4    // Chip Select
+  #define ENCODER_SPI_MISO_PIN 5  // Master In Slave Out
+  #define ENCODER_SPI_MOSI_PIN 6  // Master Out Slave In
+  #define ENCODER_SPI_CLK_PIN 7   // Clock
   
   // CAN Configuration
   #define CAN_VESC_ID 0  // Left shoulder VESC controller ID
@@ -200,10 +200,10 @@
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
   
   // SPI pins for magnetic encoder (ESP32-S3 compatible)
-  #define ENCODER_SPI_CS_PIN 5    // Chip Select
-  #define ENCODER_SPI_MISO_PIN 6  // Master In Slave Out
-  #define ENCODER_SPI_MOSI_PIN 7  // Master Out Slave In
-  #define ENCODER_SPI_CLK_PIN 8   // Clock
+  #define ENCODER_SPI_CS_PIN 4    // Chip Select
+  #define ENCODER_SPI_MISO_PIN 5  // Master In Slave Out
+  #define ENCODER_SPI_MOSI_PIN 6  // Master Out Slave In
+  #define ENCODER_SPI_CLK_PIN 7   // Clock
   
   // CAN Configuration
   #define CAN_VESC_ID 0  // Right shoulder VESC controller ID
@@ -215,6 +215,9 @@
   #define MAX_ANGLE 180.0f
   #define MAX_VEL 20000.0f    // Maximum velocity for position commands (slower for shoulder)
   #define GEAR_RATIO 89.6f  // Motor to joint encoder reduction ratio
+
+  // ESP-NOW telemetry configuration
+  #define ESP_NOW_TELEMETRY_ENABLE 1
 
 #endif
 
