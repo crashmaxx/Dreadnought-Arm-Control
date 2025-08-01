@@ -25,8 +25,8 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 
-#define SET_CS() 		(GPIO.out_w1ts.val = 1 << m_pin_cs)
-#define CLEAR_CS()		(GPIO.out_w1tc.val = 1 << m_pin_cs)
+#define SET_CS() 		gpio_set_level(m_pin_cs, 1)
+#define CLEAR_CS()		gpio_set_level(m_pin_cs, 0)
 
 // Stream buffer for triple buffering
 typedef struct data_stream_buffer_s {

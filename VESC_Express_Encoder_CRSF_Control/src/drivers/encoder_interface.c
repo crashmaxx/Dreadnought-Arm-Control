@@ -21,6 +21,11 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+// Include encoder implementations based on configuration
+#if ENCODER_TYPE == ENCODER_TYPE_SPI_MAGNETIC
+// SPI encoder implementation is in encoder_spi.c
+#endif
+
 static const char *TAG = "ENCODER";
 
 // Global encoder data

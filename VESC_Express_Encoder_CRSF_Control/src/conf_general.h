@@ -1,7 +1,13 @@
 /*
 	Copyright 2022 Benjamin Vedder	benjamin@vedder.se
 
-	This file is part of the VESC firmware.
+	This file//##define HW_HEADER					"hw_devkit_c3.h"
+#define HW_SOURCE					"hw_devkit_c3.c"
+
+#define HW_HEADER					"hw_devkit_s3.h"ne HW_HEADER					"hw_devkit_c3.h"
+//#define HW_SOURCE					"hw_devkit_c3.c"
+
+#define HW_HEADER					"hw_devkit_s3.h"part of the VESC firmware.
 
 	The VESC firmware is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -66,11 +72,11 @@
 //#define HW_HEADER					"hw_disp_v1.h"
 //#define HW_SOURCE					"hw_disp_v1.c"
 
-#define HW_HEADER					"hw_devkit_c3.h"
-#define HW_SOURCE					"hw_devkit_c3.c"
+//#define HW_HEADER					"hw_devkit_c3.h"
+//#define HW_SOURCE					"hw_devkit_c3.c"
 
-//#define HW_HEADER					"hw_devkit_s3.h"
-//#define HW_SOURCE					"hw_devkit_s3.c"
+#define HW_HEADER					"hw_devkit_s3.h"
+#define HW_SOURCE					"hw_devkit_s3.c"
 
 //#define HW_HEADER					"hw_vbms32.h"
 //#define HW_SOURCE					"hw_vbms32.c"

@@ -24,10 +24,11 @@
 
 // Software SPI
 
-#define SET_PIN(pin) 			(GPIO.out_w1ts.val = 1 << (pin))
-#define CLEAR_PIN(pin) 			(GPIO.out_w1tc.val = 1 << (pin))
-#define WRITE_PIN(pin, level)	{if (level) SET_PIN(pin); else CLEAR_PIN(pin);}
-#define READ_PIN(pin)			((GPIO.in.data >> (pin)) & 0x1)
+// Use modern ESP-IDF GPIO functions instead of direct register access
+#define SET_PIN(pin) 			gpio_set_level(pin, 1)
+#define CLEAR_PIN(pin) 			gpio_set_level(pin, 0)
+#define WRITE_PIN(pin, level)	gpio_set_level(pin, level)
+#define READ_PIN(pin)			gpio_get_level(pin)
 
 void spi_bb_init(spi_bb_state *s) {
 	gpio_reset_pin(s->miso_pin);

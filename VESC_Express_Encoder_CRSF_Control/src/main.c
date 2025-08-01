@@ -26,7 +26,7 @@
 #include "drivers/encoder_interface.h"
 #include "board_config.h"
 #include "conf_general.h"
-#include "hw_devkit_c3.h"
+#include "hw.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
@@ -577,26 +577,100 @@ void app_main(void) {
     ESP_LOGW(TAG, "CAN pins not defined - CAN communication disabled");
     #endif
 
-    // Initialize encoder system
+    // Initialize encoder system based on board configuration
+    #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
     ESP_LOGI(TAG, "Encoder config - Type: DUAL_HYBRID, PPR: %d", ENCODER_PPR);
     ESP_LOGI(TAG, "Encoder pins - PWM: GPIO%d, A: GPIO%d, B: GPIO%d", 
              ENCODER_PWM_PIN, ENCODER_A_PIN, ENCODER_B_PIN);
     ESP_LOGI(TAG, "PWM range: %d-%d us", ENCODER_PWM_MIN_US, ENCODER_PWM_MAX_US);
     
     if (encoder_init()) {
-        ESP_LOGI(TAG, "Encoder system initialized successfully");
+        ESP_LOGI(TAG, "Dual hybrid encoder system initialized successfully");
         // Wait a moment for encoder to stabilize
         vTaskDelay(pdMS_TO_TICKS(100));
         DEBUG_ENC("Encoder init: Valid=%s, Initial angle=%.2f°", 
                  encoder_is_valid() ? "YES" : "NO",
                  encoder_get_angle_deg());
     } else {
-        ESP_LOGE(TAG, "Failed to initialize encoder system");
-        DEBUG_ENC("Encoder initialization FAILED - check hardware connections");
+        ESP_LOGE(TAG, "Failed to initialize dual hybrid encoder system");
+        DEBUG_ENC("Dual hybrid encoder initialization FAILED - check hardware connections");
         ESP_LOGE(TAG, "Check pins: PWM=GPIO%d, A=GPIO%d, B=GPIO%d", 
                  ENCODER_PWM_PIN, ENCODER_A_PIN, ENCODER_B_PIN);
         return;
     }
+    
+    #elif ENCODER_TYPE == ENCODER_TYPE_SPI_MAGNETIC
+    ESP_LOGI(TAG, "Encoder config - Type: SPI_MAGNETIC (AS504x series)");
+    ESP_LOGI(TAG, "SPI pins - CS: GPIO%d, MISO: GPIO%d, MOSI: GPIO%d, CLK: GPIO%d", 
+             ENCODER_SPI_CS_PIN, ENCODER_SPI_MISO_PIN, ENCODER_SPI_MOSI_PIN, ENCODER_SPI_CLK_PIN);
+    
+    if (encoder_init()) {
+        ESP_LOGI(TAG, "SPI magnetic encoder system initialized successfully");
+        // Wait a moment for encoder to stabilize and complete initial reading
+        vTaskDelay(pdMS_TO_TICKS(200));
+        DEBUG_ENC("SPI Encoder init: Valid=%s, Initial angle=%.2f°", 
+                 encoder_is_valid() ? "YES" : "NO",
+                 encoder_get_angle_deg());
+        
+        // Print additional SPI encoder diagnostics
+        if (encoder_is_valid()) {
+            ESP_LOGI(TAG, "SPI magnetic encoder ready - %s", encoder_get_type_name());
+        } else {
+            ESP_LOGW(TAG, "SPI magnetic encoder initialized but data not yet valid");
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize SPI magnetic encoder system");
+        DEBUG_ENC("SPI magnetic encoder initialization FAILED - check hardware connections");
+        ESP_LOGE(TAG, "Check SPI pins: CS=GPIO%d, MISO=GPIO%d, MOSI=GPIO%d, CLK=GPIO%d", 
+                 ENCODER_SPI_CS_PIN, ENCODER_SPI_MISO_PIN, ENCODER_SPI_MOSI_PIN, ENCODER_SPI_CLK_PIN);
+        ESP_LOGE(TAG, "Verify AS504x encoder chip power supply and SPI connections");
+        return;
+    }
+    
+    #elif ENCODER_TYPE == ENCODER_TYPE_PWM_MAGNETIC
+    ESP_LOGI(TAG, "Encoder config - Type: PWM_MAGNETIC");
+    ESP_LOGI(TAG, "PWM pin: GPIO%d, Range: %d-%d us", 
+             ENCODER_PWM_PIN, ENCODER_PWM_MIN_US, ENCODER_PWM_MAX_US);
+    
+    if (encoder_init()) {
+        ESP_LOGI(TAG, "PWM magnetic encoder system initialized successfully");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        DEBUG_ENC("PWM Encoder init: Valid=%s, Initial angle=%.2f°", 
+                 encoder_is_valid() ? "YES" : "NO",
+                 encoder_get_angle_deg());
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize PWM magnetic encoder system");
+        DEBUG_ENC("PWM magnetic encoder initialization FAILED - check hardware connections");
+        ESP_LOGE(TAG, "Check PWM pin: GPIO%d", ENCODER_PWM_PIN);
+        return;
+    }
+    
+    #elif ENCODER_TYPE == ENCODER_TYPE_QUADRATURE
+    ESP_LOGI(TAG, "Encoder config - Type: QUADRATURE, PPR: %d", ENCODER_PPR);
+    ESP_LOGI(TAG, "Quadrature pins - A: GPIO%d, B: GPIO%d", ENCODER_A_PIN, ENCODER_B_PIN);
+    
+    if (encoder_init()) {
+        ESP_LOGI(TAG, "Quadrature encoder system initialized successfully");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        DEBUG_ENC("Quadrature Encoder init: Valid=%s, Initial angle=%.2f°", 
+                 encoder_is_valid() ? "YES" : "NO",
+                 encoder_get_angle_deg());
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize quadrature encoder system");
+        DEBUG_ENC("Quadrature encoder initialization FAILED - check hardware connections");
+        ESP_LOGE(TAG, "Check quadrature pins: A=GPIO%d, B=GPIO%d", ENCODER_A_PIN, ENCODER_B_PIN);
+        return;
+    }
+    
+    #elif ENCODER_TYPE == ENCODER_TYPE_NONE
+    ESP_LOGW(TAG, "No encoder configured - position feedback disabled");
+    ESP_LOGW(TAG, "System will operate in current control mode only");
+    
+    #else
+    ESP_LOGE(TAG, "Unknown encoder type: %d - check board_config.h", ENCODER_TYPE);
+    ESP_LOGE(TAG, "System cannot continue without valid encoder configuration");
+    return;
+    #endif
 
     // Initialize ESP-NOW telemetry
     #if ESP_NOW_TELEMETRY_ENABLE
