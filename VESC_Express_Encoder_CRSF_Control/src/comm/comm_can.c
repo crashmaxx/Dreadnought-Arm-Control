@@ -369,11 +369,11 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				stat_tmp_4->rx_time = xTaskGetTickCount();
 				stat_tmp_4->temp_fet = (float)buffer_get_int16(data8, &ind) / 10.0;
 				stat_tmp_4->temp_motor = (float)buffer_get_int16(data8, &ind) / 10.0;
-				stat_tmp_4->current_in = (float)buffer_get_int16(data8, &ind) / 10.0;
-				stat_tmp_4->pid_pos_now = (float)buffer_get_int16(data8, &ind) / 50.0;
+				// stat_tmp_4->current_in = (float)buffer_get_int16(data8, &ind) / 10.0;
+				stat_tmp_4->pid_pos_now = (float)buffer_get_float32_auto(data8, &ind);
 				if (CAN_DEBUG_ENABLE) {
-					printf("[CAN_DEBUG] Stored STATUS_4: ID=%d, Temp=%.1f°C, Pos=%.3f rev, Current_in=%.2f A\n",
-					       id, stat_tmp_4->temp_fet, stat_tmp_4->pid_pos_now, stat_tmp_4->current_in);
+					printf("[CAN_DEBUG] Stored STATUS_4: ID=%d, Temp=%.1f°C, Pos=%.3f rev\n",
+					       id, stat_tmp_4->temp_fet, stat_tmp_4->pid_pos_now);
 				}
 				break;
 			}

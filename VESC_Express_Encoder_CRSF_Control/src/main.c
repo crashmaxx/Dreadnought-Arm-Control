@@ -457,7 +457,7 @@ static void crsf_control_task(void *pvParameters) {
                         
                         // Calculate new target position for VESC (in revolutions)
                         // vesc_current_position is already in revolutions, so convert degrees error to revolutions
-                        float vesc_target_position_revolutions = vesc_current_position + (gear_compensated_error / 360.0f);
+                        float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
                         
                         // Send position command to VESC (in revolutions using floating point)
                         // Rate limit CAN command debug to every 2 seconds
@@ -514,7 +514,7 @@ static void crsf_control_task(void *pvParameters) {
                         
                         // Calculate new target position for VESC (in revolutions)
                         // vesc_current_position is already in revolutions, so convert degrees error to revolutions
-                        float vesc_target_position_revolutions = vesc_current_position + (gear_compensated_error / 360.0f);
+                        float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
                         
                         // Rate limit position control debug messages to every 1 second
                         if (current_time - last_position_debug > 1000) {
