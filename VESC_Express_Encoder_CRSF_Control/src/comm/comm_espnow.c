@@ -416,7 +416,7 @@ esp_err_t telemetry_espnow_init(void)
     memcpy(send_param->dest_mac, s_telemetry_peer_mac, ESP_NOW_ETH_ALEN);  // Use specific peer MAC
     telemetry_espnow_data_prepare(send_param);
 
-    xTaskCreate(telemetry_espnow_task, "telemetry_espnow_task", 2048, send_param, 4, NULL);
+    xTaskCreate(telemetry_espnow_task, "telemetry_espnow_task", 8192, send_param, 4, NULL);  // Increased from 2048 to 8192 bytes
 
     return ESP_OK;
 }

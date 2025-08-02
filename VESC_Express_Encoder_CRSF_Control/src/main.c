@@ -323,7 +323,6 @@ static void crsf_control_task(void *pvParameters) {
         float vesc_duty = 0.0f;
         float vesc_temp_fet = 0.0f;
         float vesc_temp_motor = 0.0f;
-        float vesc_current_in = 0.0f;
         
         if (vesc_status_1) {
             uint32_t age_ms_1 = current_time - (vesc_status_1->rx_time * portTICK_PERIOD_MS);
@@ -352,7 +351,6 @@ static void crsf_control_task(void *pvParameters) {
                 vesc_position_valid = true;
                 vesc_temp_fet = vesc_status->temp_fet;
                 vesc_temp_motor = vesc_status->temp_motor;
-                vesc_current_in = vesc_status->current_in;
                 
                 // Check for temperature faults
                 if (vesc_temp_fet > 80.0f) {  // FET overtemp
