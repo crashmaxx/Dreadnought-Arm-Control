@@ -54,6 +54,14 @@ enum {
     TELEMETRY_ESPNOW_DATA_MAX,
 };
 
+/* Telemetry payload structure for ESP-NOW data */
+typedef struct {
+    char board_name[16];                  // Board name (null-terminated string)
+    float encoder_degrees;                // Current encoder position in degrees
+    float crsf_target_degrees;            // CRSF target position in degrees
+    float vesc_target_revolutions;        // VESC target position in revolutions
+} __attribute__((packed)) telemetry_payload_t;
+
 /* User defined field of ESPNOW data in this telemetry. */
 typedef struct {
     uint8_t type;                         //Broadcast or unicast ESPNOW data.
@@ -81,5 +89,7 @@ typedef struct {
 esp_err_t telemetry_espnow_init(void);
 void telemetry_wifi_init(void);
 esp_err_t telemetry_espnow_send_data(const uint8_t *dest_mac, const void *data, size_t data_len);
+void telemetry_espnow_data_prepare(telemetry_espnow_send_param_t *send_param);
+void telemetry_espnow_set_payload_data(const char *board_name, float encoder_degrees, float crsf_target_degrees, float vesc_target_revolutions);
 
 #endif

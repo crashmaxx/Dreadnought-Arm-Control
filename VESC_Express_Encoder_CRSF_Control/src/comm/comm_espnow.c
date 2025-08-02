@@ -8,7 +8,7 @@
 #include "freertos/queue.h"
 #include "nvs_flash.h"
 #include "esp_random.h"
-#include "esp_event.h"
+#include "esp_system.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
@@ -36,12 +36,8 @@
 #define CONFIG_ESPNOW_CHANNEL 1
 #endif
 
-#ifndef CONFIG_ESPNOW_SEND_COUNT
-#define CONFIG_ESPNOW_SEND_COUNT 100
-#endif
-
 #ifndef CONFIG_ESPNOW_SEND_DELAY
-#define CONFIG_ESPNOW_SEND_DELAY 1000
+#define CONFIG_ESPNOW_SEND_DELAY 500
 #endif
 
 #ifndef CONFIG_ESPNOW_SEND_LEN
@@ -81,6 +77,14 @@ static QueueHandle_t s_telemetry_espnow_queue = NULL;
 static uint8_t s_telemetry_broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t s_telemetry_peer_mac[ESP_NOW_ETH_ALEN] = PEER_MAC_ADDR;  // Specific peer MAC from board config
 static uint16_t s_telemetry_espnow_seq[TELEMETRY_ESPNOW_DATA_MAX] = { 0, 0 };
+
+// Global telemetry data storage
+static telemetry_payload_t s_telemetry_data = {
+    .board_name = "Unknown",
+    .encoder_degrees = 0.0f,
+    .crsf_target_degrees = 0.0f,
+    .vesc_target_revolutions = 0.0f
+};
 
 static void telemetry_espnow_deinit(telemetry_espnow_send_param_t *send_param);
 
@@ -184,20 +188,50 @@ int telemetry_espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state
     return -1;
 }
 
+/* Update telemetry payload data */
+void telemetry_espnow_set_payload_data(const char *board_name, float encoder_degrees, float crsf_target_degrees, float vesc_target_revolutions)
+{
+    // Copy board name safely (ensure null termination)
+    strncpy(s_telemetry_data.board_name, board_name, sizeof(s_telemetry_data.board_name) - 1);
+    s_telemetry_data.board_name[sizeof(s_telemetry_data.board_name) - 1] = '\0';
+    
+    // Update telemetry values
+    s_telemetry_data.encoder_degrees = encoder_degrees;
+    s_telemetry_data.crsf_target_degrees = crsf_target_degrees;
+    s_telemetry_data.vesc_target_revolutions = vesc_target_revolutions;
+    
+    // Debug output (can be enabled/disabled)
+    static uint32_t last_debug = 0;
+    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    if (current_time - last_debug > 2000) {  // Debug every 2 seconds
+        ESP_LOGI(TAG, "Telemetry update: %s, Enc:%.1f°, CRSF:%.1f°, VESC:%.3frev", 
+                board_name, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
+        last_debug = current_time;
+    }
+}
+
 /* Prepare ESPNOW data to be sent. */
 void telemetry_espnow_data_prepare(telemetry_espnow_send_param_t *send_param)
 {
     telemetry_espnow_data_t *buf = (telemetry_espnow_data_t *)send_param->buffer;
 
-    assert(send_param->len >= sizeof(telemetry_espnow_data_t));
+    assert(send_param->len >= sizeof(telemetry_espnow_data_t) + sizeof(telemetry_payload_t));
 
     buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? TELEMETRY_ESPNOW_DATA_BROADCAST : TELEMETRY_ESPNOW_DATA_UNICAST;
     buf->state = send_param->state;
     buf->seq_num = s_telemetry_espnow_seq[buf->type]++;
     buf->crc = 0;
     buf->magic = send_param->magic;
-    /* Fill all remaining bytes after the data with random values */
-    esp_fill_random(buf->payload, send_param->len - sizeof(telemetry_espnow_data_t));
+    
+    // Copy actual telemetry data instead of random data
+    memcpy(buf->payload, &s_telemetry_data, sizeof(telemetry_payload_t));
+    
+    // Fill any remaining bytes with zeros
+    size_t telemetry_size = sizeof(telemetry_espnow_data_t) + sizeof(telemetry_payload_t);
+    if (send_param->len > telemetry_size) {
+        memset((uint8_t *)buf + telemetry_size, 0, send_param->len - telemetry_size);
+    }
+    
     buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 
@@ -210,11 +244,12 @@ static void telemetry_espnow_task(void *pvParameter)
     bool is_broadcast = false;
     int ret;
 
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
-    ESP_LOGI(TAG, "Start sending broadcast data");
+    vTaskDelay(2000 / portTICK_PERIOD_MS);  // Reduced from 5000ms to 2000ms
+    ESP_LOGI(TAG, "ESP-NOW task starting - sending to peer "MACSTR, MAC2STR(s_telemetry_peer_mac));
 
     /* Start sending broadcast ESPNOW data. */
     telemetry_espnow_send_param_t *send_param = (telemetry_espnow_send_param_t *)pvParameter;
+    ESP_LOGI(TAG, "Sending first ESP-NOW packet...");
     if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
         ESP_LOGE(TAG, "Send error");
         telemetry_espnow_deinit(send_param);
@@ -235,12 +270,8 @@ static void telemetry_espnow_task(void *pvParameter)
                 }
 
                 if (!is_broadcast) {
-                    send_param->count--;
-                    if (send_param->count == 0) {
-                        ESP_LOGI(TAG, "Send done");
-                        telemetry_espnow_deinit(send_param);
-                        vTaskDelete(NULL);
-                    }
+                    // Continuous sending - no count limit
+                    // Just continue sending telemetry data
                 }
 
                 /* Delay a while before sending the next data. */
@@ -248,7 +279,7 @@ static void telemetry_espnow_task(void *pvParameter)
                     vTaskDelay(send_param->delay/portTICK_PERIOD_MS);
                 }
 
-                ESP_LOGI(TAG, "send data to "MACSTR"", MAC2STR(send_cb->mac_addr));
+                ESP_LOGD(TAG, "send data to "MACSTR"", MAC2STR(send_cb->mac_addr));
 
                 memcpy(send_param->dest_mac, send_cb->mac_addr, ESP_NOW_ETH_ALEN);
                 telemetry_espnow_data_prepare(send_param);
@@ -401,10 +432,10 @@ esp_err_t telemetry_espnow_init(void)
     send_param->broadcast = false; // Not broadcast
     send_param->state = 0;
     send_param->magic = esp_random();
-    send_param->count = CONFIG_ESPNOW_SEND_COUNT;
     send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
-    send_param->len = CONFIG_ESPNOW_SEND_LEN;
-    send_param->buffer = malloc(CONFIG_ESPNOW_SEND_LEN);
+    // Calculate exact size needed for telemetry data
+    send_param->len = sizeof(telemetry_espnow_data_t) + sizeof(telemetry_payload_t);
+    send_param->buffer = malloc(send_param->len);
     if (send_param->buffer == NULL) {
         ESP_LOGE(TAG, "Malloc send buffer fail");
         free(send_param);
@@ -416,6 +447,8 @@ esp_err_t telemetry_espnow_init(void)
     memcpy(send_param->dest_mac, s_telemetry_peer_mac, ESP_NOW_ETH_ALEN);  // Use specific peer MAC
     telemetry_espnow_data_prepare(send_param);
 
+    ESP_LOGI(TAG, "Creating ESP-NOW telemetry task with peer "MACSTR, MAC2STR(s_telemetry_peer_mac));
+    ESP_LOGI(TAG, "Telemetry packet size: %d bytes, delay: %dms", send_param->len, send_param->delay);
     xTaskCreate(telemetry_espnow_task, "telemetry_espnow_task", 8192, send_param, 4, NULL);  // Increased from 2048 to 8192 bytes
 
     return ESP_OK;

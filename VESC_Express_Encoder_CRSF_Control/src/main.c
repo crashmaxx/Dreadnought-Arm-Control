@@ -56,10 +56,10 @@ volatile backup_data backup = {
 // These control what debug messages are shown in the serial monitor
 #define DEBUG_POSITION_CONTROL      0  // Position control debugging
 #define DEBUG_ENCODER_DATA          0  // Encoder data debugging
-#define DEBUG_VESC_STATUS           0  // VESC status debugging
+#define DEBUG_VESC_STATUS           1  // VESC status debugging (includes parameter updates)
 #define DEBUG_CRSF_CHANNELS         0  // CRSF channel data
-#define DEBUG_CAN_COMMANDS          0  // CAN command transmission
-#define DEBUG_ESPNOW_TELEMETRY      1  // ESP-NOW telemetry debugging
+#define DEBUG_CAN_COMMANDS          1  // CAN command transmission
+#define DEBUG_ESPNOW_TELEMETRY      0  // ESP-NOW telemetry debugging
 
 // CAN Test Mode - set to 1 to enable CAN testing without checking system state
 #define CAN_TEST_MODE               0
@@ -290,6 +290,7 @@ static void crsf_control_task(void *pvParameters) {
     uint32_t last_vesc_debug = 0;  // Rate limit VESC debug messages
     uint32_t last_position_debug = 0;  // Rate limit position control debug messages
     uint32_t last_can_cmd_debug = 0;  // Rate limit CAN command debug messages
+    uint32_t last_vesc_params_update = 0;  // Rate limit VESC parameter updates
     
     // VESC position control variables
     float vesc_current_position = 0.0f;
@@ -360,6 +361,28 @@ static void crsf_control_task(void *pvParameters) {
                 if (vesc_temp_motor > 100.0f) {  // Motor overtemp
                     vesc_has_fault = true;
                     ESP_LOGW(TAG, "[VESC_FAULT] Motor overtemp: %.1f°C", vesc_temp_motor);
+                }
+                
+                // Periodically send VESC motion parameters (every 10 seconds after receiving status 4)
+                if (current_time - last_vesc_params_update > 10000) {
+                    DEBUG_VESC("Updating VESC motion parameters: Vel=%.0f, Accel=%.0f, Decel=%.0f", 
+                              MAX_VEL, MAX_ACCEL, MAX_DECEL);
+                    
+                    // Send maximum velocity (ERPM units - RPM of the motor)
+                    comm_can_set_max_sp_vel(CAN_VESC_ID, MAX_VEL);
+                    DEBUG_VESC("Sent MAX_VEL=%.0f to VESC ID %d", MAX_VEL, CAN_VESC_ID);
+                    vTaskDelay(pdMS_TO_TICKS(10));  // Small delay between CAN commands
+                    
+                    // Send maximum acceleration (ERPM/s units)
+                    comm_can_set_max_sp_accel(CAN_VESC_ID, MAX_ACCEL);
+                    DEBUG_VESC("Sent MAX_ACCEL=%.0f to VESC ID %d", MAX_ACCEL, CAN_VESC_ID);
+                    vTaskDelay(pdMS_TO_TICKS(10));  // Small delay between CAN commands
+                    
+                    // Send maximum deceleration (ERPM/s units)
+                    comm_can_set_max_sp_decel(CAN_VESC_ID, MAX_DECEL);
+                    DEBUG_VESC("Sent MAX_DECEL=%.0f to VESC ID %d", MAX_DECEL, CAN_VESC_ID);
+                    
+                    last_vesc_params_update = current_time;
                 }
                 
                 // Rate limit VESC debug messages to every 2 seconds
@@ -462,6 +485,11 @@ static void crsf_control_task(void *pvParameters) {
                         }
                         comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_target_position_revolutions);
                         
+                        // Update ESP-NOW telemetry data with current system values
+                        #if ESP_NOW_TELEMETRY_ENABLE
+                        telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_position_revolutions);
+                        #endif
+                        
                         // Rate limit position control debug messages to every 1 second
                         if (current_time - last_position_debug > 1000) {
                             DEBUG_POS("CRSF: %.1f°, Encoder: %.1f°, Error: %.1f°, VESC Target: %.6f rev, RPM: %.0f, Armed=YES", 
@@ -511,6 +539,11 @@ static void crsf_control_task(void *pvParameters) {
                         // vesc_current_position is already in revolutions, so convert degrees error to revolutions
                         float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
                         
+                        // Update ESP-NOW telemetry data with current system values (even when disarmed)
+                        #if ESP_NOW_TELEMETRY_ENABLE
+                        telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_position_revolutions);
+                        #endif
+                        
                         // Rate limit position control debug messages to every 1 second
                         if (current_time - last_position_debug > 1000) {
                             DEBUG_POS("CRSF: %.1f°, Encoder: %.1f°, Error: %.1f°, VESC Target: %.6f rev, RPM: %.0f, Armed=NO", 
@@ -530,6 +563,15 @@ static void crsf_control_task(void *pvParameters) {
                 }
             } else {
                 // No connection - apply safety behavior
+                
+                // Update ESP-NOW telemetry even during failsafe (with default CRSF target)
+                #if ESP_NOW_TELEMETRY_ENABLE
+                float encoder_degrees = encoder_get_angle_deg();
+                float crsf_target_degrees = (MIN_ANGLE + MAX_ANGLE) / 2.0f; // Center position during failsafe
+                float vesc_target_revolutions = 0.0f; // No target during failsafe
+                telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
+                #endif
+                
                 if (CRSF_FAILSAFE_ENABLE_BRAKE) {
                     DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT_BRAKE) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT_BRAKE, CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
                     comm_can_set_current_brake(CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
@@ -549,29 +591,33 @@ static void crsf_control_task(void *pvParameters) {
 // ESP-NOW initialization task - runs with larger stack to avoid overflow
 static void espnow_init_task(void *pvParameters) {
     
+    ESP_LOGI(TAG, "[ESP-NOW] Starting ESP-NOW initialization task...");
+    
     // Initialize NVS (required for WiFi)
-    DEBUG_ESPNOW("Starting NVS initialization...");
+    ESP_LOGI(TAG, "[ESP-NOW] Starting NVS initialization...");
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        DEBUG_ESPNOW("NVS needs erase and reinit...");
+        ESP_LOGI(TAG, "[ESP-NOW] NVS needs erase and reinit...");
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    DEBUG_ESPNOW("NVS initialized successfully for ESP-NOW");
+    ESP_LOGI(TAG, "[ESP-NOW] NVS initialized successfully");
     
     // Initialize WiFi (required for ESP-NOW)
-    DEBUG_ESPNOW("Starting WiFi initialization...");
+    ESP_LOGI(TAG, "[ESP-NOW] Starting WiFi initialization...");
     telemetry_wifi_init();
-    DEBUG_ESPNOW("WiFi initialized successfully for ESP-NOW");
+    ESP_LOGI(TAG, "[ESP-NOW] WiFi initialized successfully");
     
-    DEBUG_ESPNOW("Starting ESP-NOW protocol initialization...");
+    ESP_LOGI(TAG, "[ESP-NOW] Starting ESP-NOW protocol initialization...");
     if (telemetry_espnow_init() == ESP_OK) {
-        ESP_LOGI(TAG, "ESP-NOW telemetry initialized successfully");  // Always show success
-        DEBUG_ESPNOW("ESP-NOW configured for unicast communication to peer");
+        ESP_LOGI(TAG, "[ESP-NOW] ESP-NOW telemetry initialized successfully - sending every 500ms");
+        ESP_LOGI(TAG, "[ESP-NOW] Configured for unicast communication to peer");
     } else {
-        ESP_LOGW(TAG, "Failed to initialize ESP-NOW telemetry");  // Always show failures
+        ESP_LOGE(TAG, "[ESP-NOW] Failed to initialize ESP-NOW telemetry");
     }
+    
+    ESP_LOGI(TAG, "[ESP-NOW] Initialization task complete - deleting task");
     vTaskDelete(NULL);  // Delete this task when done
 }
 #endif
@@ -708,8 +754,10 @@ void app_main(void) {
     
     // Create ESP-NOW initialization task with large stack (runs once then deletes itself)
     #if ESP_NOW_TELEMETRY_ENABLE
-    DEBUG_ESPNOW("Creating ESP-NOW initialization task...");
+    ESP_LOGI(TAG, "ESP-NOW telemetry ENABLED - Creating initialization task...");
     xTaskCreate(espnow_init_task, "espnow_init", 8192, NULL, 3, NULL);  // 8KB stack, priority 3
+    #else
+    ESP_LOGI(TAG, "ESP-NOW telemetry DISABLED in board configuration");
     #endif
     
     ESP_LOGI(TAG, "Initialization complete - System ready");
