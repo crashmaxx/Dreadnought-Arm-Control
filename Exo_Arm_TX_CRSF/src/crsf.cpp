@@ -29,15 +29,18 @@ CrsfSerial::CrsfSerial(HardwareSerial& uart, int8_t rxPin, int8_t txPin, bool ha
 }
 
 void CrsfSerial::begin(uint32_t baudrate) {
-    if (_halfDuplex) {
-        // Half-duplex mode for ELRS TX modules
-        _uart.begin(baudrate, SERIAL_8N1, _rxPin, _txPin);
-        // In half-duplex mode, we primarily send data
-        pinMode(_txPin, OUTPUT);
-    } else {
-        // Full-duplex mode
-        _uart.begin(baudrate, SERIAL_8N1, _rxPin, _txPin);
-    }
+    // Begin UART with specified pins
+    _uart.begin(baudrate, SERIAL_8N1, _rxPin, _txPin);
+    
+    Serial.println("CRSF UART initialized");
+    Serial.print("Baudrate: ");
+    Serial.println(baudrate);
+    Serial.print("RX Pin: ");
+    Serial.println(_rxPin);
+    Serial.print("TX Pin: ");
+    Serial.println(_txPin);
+    Serial.print("Half-duplex: ");
+    Serial.println(_halfDuplex ? "YES" : "NO");
 }
 
 uint8_t CrsfSerial::crc8(const uint8_t* ptr, uint8_t len) {
@@ -121,6 +124,8 @@ void CrsfSerial::sendChannels() {
     
     // Send frame
     _uart.write(frame, frameIndex);
+    _uart.flush(); // Ensure all data is transmitted
+    
     _lastChannelUpdate = millis();
 }
 
