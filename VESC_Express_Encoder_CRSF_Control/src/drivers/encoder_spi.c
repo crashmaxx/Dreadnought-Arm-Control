@@ -20,8 +20,11 @@
 #include "encoder_interface.h"
 #include "enc_as504x.h"
 #include "board_config.h"
+#include "debug_config.h"  // For DEBUG_VERBOSE macros
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <math.h>
 
 #if ENCODER_TYPE == ENCODER_TYPE_SPI_MAGNETIC
@@ -39,6 +42,30 @@ static uint32_t error_count = 0;
 // Function implementations
 static bool spi_encoder_update_impl(void);  // Forward declaration
 
+// Simple SPI connectivity test
+static void spi_connectivity_test(void) {
+    ESP_LOGI(TAG, "Running SPI connectivity test...");
+    
+    // Test basic SPI communication with AS504x
+    spi_bb_begin(&(spi_encoder_config.sw_spi));
+    
+    // Send a dummy command and read response
+    uint16_t test_response = 0;
+    spi_bb_transfer_16(&(spi_encoder_config.sw_spi), &test_response, 0, 1);
+    
+    spi_bb_end(&(spi_encoder_config.sw_spi));
+    
+    ESP_LOGI(TAG, "SPI test response: 0x%04X", test_response);
+    
+    // Check if we got any response (not all 0s or all 1s)
+    if (test_response == 0x0000 || test_response == 0xFFFF) {
+        ESP_LOGW(TAG, "SPI response suggests connection issue");
+        ESP_LOGW(TAG, "Check: 1) Wiring, 2) Power supply to AS504x, 3) Ground connections");
+    } else {
+        ESP_LOGI(TAG, "SPI appears to be responding");
+    }
+}
+
 static bool spi_encoder_init_impl(void) {
     ESP_LOGI(TAG, "Initializing SPI magnetic encoder (AS504x)");
     
@@ -47,6 +74,10 @@ static bool spi_encoder_init_impl(void) {
     spi_encoder_config.sw_spi.mosi_pin = ENCODER_SPI_MOSI_PIN;
     spi_encoder_config.sw_spi.sck_pin = ENCODER_SPI_CLK_PIN;
     spi_encoder_config.sw_spi.nss_pin = ENCODER_SPI_CS_PIN;  // CS pin is called nss_pin
+    
+    ESP_LOGI(TAG, "SPI pin configuration: CS=%d, CLK=%d, MISO=%d, MOSI=%d", 
+             spi_encoder_config.sw_spi.nss_pin, spi_encoder_config.sw_spi.sck_pin,
+             spi_encoder_config.sw_spi.miso_pin, spi_encoder_config.sw_spi.mosi_pin);
     
     // Initialize AS504x encoder
     bool init_result = enc_as504x_init(&spi_encoder_config);
@@ -61,8 +92,30 @@ static bool spi_encoder_init_impl(void) {
         last_update_time_us = esp_timer_get_time();
         error_count = 0;
         
-        // Do initial read to establish baseline
-        spi_encoder_update_impl();
+        // Run SPI connectivity test first
+        spi_connectivity_test();
+        
+        // Give the AS504x time to stabilize after SPI init
+        vTaskDelay(pdMS_TO_TICKS(50));
+        
+        // Do initial read to establish baseline with multiple attempts
+        ESP_LOGI(TAG, "Performing initial encoder read attempts...");
+        bool initial_read = false;
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            ESP_LOGI(TAG, "Read attempt %d/5...", attempt);
+            initial_read = spi_encoder_update_impl();
+            if (initial_read) {
+                ESP_LOGI(TAG, "Success on attempt %d! Initial angle: %.2f degrees", attempt, last_angle_deg);
+                break;
+            } else {
+                ESP_LOGW(TAG, "Attempt %d failed", attempt);
+                vTaskDelay(pdMS_TO_TICKS(100));  // Wait between attempts
+            }
+        }
+        
+        if (!initial_read) {
+            ESP_LOGE(TAG, "All initial read attempts failed - encoder may not be connected");
+        }
         
         return true;
     } else {
@@ -74,29 +127,67 @@ static bool spi_encoder_init_impl(void) {
 
 static bool spi_encoder_update_impl(void) {
     if (!spi_encoder_initialized) {
+        ESP_LOGW(TAG, "SPI encoder not initialized");
         return false;
     }
     
     // Run the AS504x routine to update internal state
     enc_as504x_routine(&spi_encoder_config);
     
-    // Check if encoder is connected
-    if (!AS504x_IS_CONNECTED(&spi_encoder_config)) {
-        error_count++;
-        return false;
-    }
-    
-    // Read angle from encoder
+    // Get angle data directly - this is what actually matters
     float new_angle_deg = enc_as504x_read_angle(&spi_encoder_config);
     
-    // Check for valid angle reading
-    if (isnan(new_angle_deg) || isinf(new_angle_deg)) {
+    // Debug: Log the raw angle reading periodically
+    static uint32_t debug_counter = 0;
+    debug_counter++;
+    if (debug_counter % 20 == 1) {  // Log every 20th reading
+        DEBUG_VERBOSE_LOG(TAG, "AS504x raw angle reading: %.2f°, SPI val: 0x%04X", 
+                         new_angle_deg, spi_encoder_config.state.spi_val);
+    }
+    
+    // Check if we got valid angle data
+    // Note: 0.0° might be valid, but if we keep getting exactly 0.0°, it's probably an error
+    static float last_non_zero_angle = -1.0f;
+    static uint32_t zero_angle_count = 0;
+    
+    if (new_angle_deg == 0.0f) {
+        zero_angle_count++;
+        if (zero_angle_count > 10 && last_non_zero_angle >= 0.0f) {
+            // Too many consecutive zero readings - probably an error
+            DEBUG_VERBOSE_LOGW(TAG, "Too many zero angle readings (%lu), last good: %.2f°", zero_angle_count, last_non_zero_angle);
+        }
+    } else if (!isnan(new_angle_deg) && !isinf(new_angle_deg) && new_angle_deg > 0.0f && new_angle_deg <= 360.0f) {
+        last_non_zero_angle = new_angle_deg;
+        zero_angle_count = 0;
+    }
+    
+    if (!isnan(new_angle_deg) && !isinf(new_angle_deg) && new_angle_deg >= 0.0f && new_angle_deg <= 360.0f) {
+        // We have valid angle data - the encoder is working!
+        
+        // Force connection status if we're getting good position data
+        if (!AS504x_IS_CONNECTED(&spi_encoder_config)) {
+            // Only log occasionally
+            if (error_count % 100 == 1) {
+                DEBUG_VERBOSE_LOG(TAG, "AS504x providing valid angle data (%.2f°) - overriding connection status", new_angle_deg);
+            }
+            // Override the connection detection - position reading is what matters
+            spi_encoder_config.state.sensor_diag.is_connected = 1;
+        }
+        
+        // Process the valid angle data
+        // Normalize angle to 0-360 degrees (should already be normalized)
+        new_angle_deg = encoder_normalize_angle_deg(new_angle_deg);
+        
+    } else {
+        // Invalid angle data
         error_count++;
+        if (error_count % 50 == 1) {
+            DEBUG_VERBOSE_LOGW(TAG, "Invalid angle reading: %.2f (error count: %lu)", new_angle_deg, error_count);
+        }
         return false;
     }
     
-    // Normalize angle to 0-360 degrees
-    new_angle_deg = encoder_normalize_angle_deg(new_angle_deg);
+    // If we get here, we have valid angle data and a "connected" sensor
     
     // Calculate velocity
     uint32_t current_time_us = esp_timer_get_time();

@@ -7,10 +7,10 @@
 //#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
 //#define BOARD_LEFT_ELBOW
-#define BOARD_RIGHT_ELBOW
+//#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
-//#define BOARD_LEFT_SHOULDER
+#define BOARD_LEFT_SHOULDER
 //#define BOARD_RIGHT_SHOULDER
 //#define BOARD_CUSTOM
 
@@ -49,7 +49,7 @@
   #define CONTROL_CHANNEL 4
   #define MIN_ANGLE 20.0f
   #define MAX_ANGLE 300.0f
-  #define MAX_VEL 80000.0f  // Maximum velocity for position commands
+  #define MAX_VEL 8400.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
@@ -77,7 +77,7 @@
   #define CONTROL_CHANNEL 4
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
-  #define MAX_VEL 80000.0f  // Maximum velocity for position commands
+  #define MAX_VEL 8400.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
@@ -105,7 +105,7 @@
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
-  #define MAX_VEL 60000.0f  // Maximum velocity for position commands
+  #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
@@ -133,7 +133,7 @@
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
-  #define MAX_VEL 60000.0f  // Maximum velocity for position commands
+  #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
@@ -159,15 +159,15 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 2
-  #define MIN_ANGLE 0.0f
-  #define MAX_ANGLE 359.0f
-  #define MAX_VEL 40000.0f    // Maximum velocity for position commands
+  #define MIN_ANGLE 140.0f
+  #define MAX_ANGLE 400.0f
+  #define MAX_VEL 6300.0f    // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 1
+  #define ESP_NOW_TELEMETRY_ENABLE 0
 
 #endif
 
@@ -189,7 +189,7 @@
   #define CONTROL_CHANNEL 2
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
-  #define MAX_VEL 40000.0f    // Maximum velocity for position commands
+  #define MAX_VEL 6300.0f    // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
@@ -204,10 +204,10 @@
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
   
   // SPI pins for magnetic encoder
-  #define ENCODER_SPI_CLK_PIN 4   // Clock
-  #define ENCODER_SPI_MISO_PIN 5  // Master In Slave Out
-  #define ENCODER_SPI_MOSI_PIN 6  // Master Out Slave In
-  #define ENCODER_SPI_CS_PIN 7    // Chip Select
+  #define ENCODER_SPI_CS_PIN 10    // Chip Select
+  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In
+  #define ENCODER_SPI_CLK_PIN 12   // Clock
+  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out
   
   // CAN Configuration
   #define CAN_VESC_ID 0
@@ -217,7 +217,7 @@
   #define CONTROL_CHANNEL 1
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 180.0f
-  #define MAX_VEL 20000.0f    // Maximum velocity for position commands (slower for shoulder)
+  #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 89.6f  // Motor to joint encoder reduction ratio
@@ -230,12 +230,12 @@
 #ifdef BOARD_RIGHT_SHOULDER
   #define BOARD_NAME "Right_Shoulder"
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
-  
+
   // SPI pins for magnetic encoder
-  #define ENCODER_SPI_CLK_PIN 4   // Clock
-  #define ENCODER_SPI_MISO_PIN 5  // Master In Slave Out
-  #define ENCODER_SPI_MOSI_PIN 6  // Master Out Slave In
-  #define ENCODER_SPI_CS_PIN 7    // Chip Select
+  #define ENCODER_SPI_CS_PIN 10    // Chip Select
+  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In
+  #define ENCODER_SPI_CLK_PIN 12   // Clock
+  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out
   
   // CAN Configuration
   #define CAN_VESC_ID 0
@@ -245,7 +245,7 @@
   #define CONTROL_CHANNEL 1
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 180.0f
-  #define MAX_VEL 20000.0f    // Maximum velocity for position commands (slower for shoulder)
+  #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 89.6f  // Motor to joint encoder reduction ratio

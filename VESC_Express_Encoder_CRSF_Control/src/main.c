@@ -25,6 +25,7 @@
 #include "comm/comm_espnow.h"
 #include "drivers/encoder_interface.h"
 #include "board_config.h"
+#include "debug_config.h"  // Debug configuration and macros
 #include "conf_general.h"
 #include "hw.h"
 #include "freertos/FreeRTOS.h"
@@ -35,6 +36,8 @@
 
 #include "main.h"
 #include <math.h>
+#include <string.h>
+#include <stdio.h>
 
 // Global backup variable (required by comm_can.c)
 volatile backup_data backup = {
@@ -52,19 +55,10 @@ volatile backup_data backup = {
     }
 };
 
-// Debug configuration - set to 1 to enable, 0 to disable
-// These control what debug messages are shown in the serial monitor
-#define DEBUG_POSITION_CONTROL      0  // Position control debugging
-#define DEBUG_ENCODER_DATA          0  // Encoder data debugging
-#define DEBUG_VESC_STATUS           1  // VESC status debugging (includes parameter updates)
-#define DEBUG_CRSF_CHANNELS         0  // CRSF channel data
-#define DEBUG_CAN_COMMANDS          1  // CAN command transmission
-#define DEBUG_ESPNOW_TELEMETRY      0  // ESP-NOW telemetry debugging
-
 // CAN Test Mode - set to 1 to enable CAN testing without checking system state
 #define CAN_TEST_MODE               0
 
-// Debug macros
+// Debug macros (main.c specific)
 #if DEBUG_POSITION_CONTROL
 #define DEBUG_POS(fmt, ...) ESP_LOGI(TAG, "[POS] " fmt, ##__VA_ARGS__)
 #else
@@ -437,12 +431,19 @@ static void crsf_control_task(void *pvParameters) {
             // Print channel data for debugging
             if (current_time - last_print > CRSF_DEBUG_PRINT_RATE_MS) {
                 uint32_t last_update = crsf_get_last_update_time();
+                #if DEBUG_CRSF_CHANNELS
                 uint32_t age_ms = current_time - last_update;
+                #endif
                 DEBUG_CRSF("Channels: CH1=%d CH2=%d CH3=%d CH4=%d CH5=%d Connected=%s Armed=%s Age=%lums",
                          channels[0], channels[1], channels[2], channels[3], channels[4],
                          crsf_is_connected() ? "YES" : "NO",
                          crsf_is_armed() ? "YES" : "NO",
-                         age_ms);
+                         #if DEBUG_CRSF_CHANNELS
+                         age_ms
+                         #else
+                         (uint32_t)(current_time - last_update)
+                         #endif
+                         );
                 last_print = current_time;
             }
             
@@ -649,6 +650,19 @@ void app_main(void) {
     ESP_LOGW(TAG, "CAN pins not defined - CAN communication disabled");
     #endif
 
+    // ============================================================================
+    // ENCODER INITIALIZATION WITH DELAY
+    // ============================================================================
+    ESP_LOGI(TAG, "Starting encoder initialization in 5 seconds...");
+    ESP_LOGI(TAG, "This delay allows you to see initial system status");
+    
+    for (int i = 5; i > 0; i--) {
+        ESP_LOGI(TAG, "Encoder initialization in %d seconds...", i);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    
+    ESP_LOGI(TAG, "Proceeding with encoder initialization...");
+
     // Initialize encoder system based on board configuration
     #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
     ESP_LOGI(TAG, "Encoder config - Type: DUAL_HYBRID, PPR: %d", ENCODER_PPR);
@@ -743,6 +757,8 @@ void app_main(void) {
     ESP_LOGE(TAG, "System cannot continue without valid encoder configuration");
     return;
     #endif
+
+    ESP_LOGI(TAG, "Encoder initialization phase completed");
 
     // Initialize CRSF receiver
     crsf_init(CRSF_UART_NUM, CRSF_TX_PIN, CRSF_RX_PIN, CRSF_BAUDRATE);
