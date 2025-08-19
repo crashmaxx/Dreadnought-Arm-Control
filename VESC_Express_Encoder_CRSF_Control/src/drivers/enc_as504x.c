@@ -23,7 +23,9 @@
 #include "debug_config.h"  // For DEBUG_VERBOSE macros
 #include "esp_log.h"
 
+#if DEBUG_VERBOSE
 static const char* TAG = "AS504x";
+#endif
 #include "utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

@@ -55,9 +55,6 @@ volatile backup_data backup = {
     }
 };
 
-// CAN Test Mode - set to 1 to enable CAN testing without checking system state
-#define CAN_TEST_MODE               0
-
 // Debug macros (main.c specific)
 #if DEBUG_POSITION_CONTROL
 #define DEBUG_POS(fmt, ...) ESP_LOGI(TAG, "[POS] " fmt, ##__VA_ARGS__)
@@ -95,186 +92,7 @@ volatile backup_data backup = {
 #define DEBUG_ESPNOW(fmt, ...)
 #endif
 
-#if CAN_TEST_MODE
-#define DEBUG_CAN_TEST(fmt, ...) ESP_LOGI(TAG, "[CAN_TEST] " fmt, ##__VA_ARGS__)
-
-// CAN Test Mode Configuration - Easy to change command type and range
-#define CAN_TEST_COMMAND_TYPE       CAN_PACKET_SET_POS_FLOATINGPOINT  // Command to send (SET_CURRENT, SET_POS, SET_RPM, etc.)
-#define CAN_TEST_MIN_VALUE          0.0f                  // Minimum command value (e.g., -10A for current)
-#define CAN_TEST_MAX_VALUE          359.0f                   // Maximum command value (e.g., +10A for current)
-#define CAN_TEST_COMMAND_NAME       "SET_POS_FLOAT"           // Name for debug output
-
-#else
-#define DEBUG_CAN_TEST(fmt, ...)
-#endif
-
 static const char *TAG = "MAIN";
-
-#if CAN_TEST_MODE
-// CAN Test Mode function - reads VESC status and sends configurable motor commands when armed
-static void can_test_mode(void) {
-    static uint32_t last_status_request = 0;
-    static uint32_t last_ping = 0;
-    static uint32_t last_detailed_print = 0;
-    static uint32_t last_motor_cmd_debug = 0;
-    static bool first_run = true;
-    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    
-    // First run initialization message
-    if (first_run) {
-        ESP_LOGI(TAG, "[CAN_TEST] Starting CAN test mode - looking for VESC ID %d", CAN_VESC_ID);
-        ESP_LOGI(TAG, "[CAN_TEST] Motor commands ENABLED when CH5 armed - CMD_ID=%d (%s), Range: %.1f to %.1f", 
-                 CAN_TEST_COMMAND_TYPE, CAN_TEST_COMMAND_NAME, CAN_TEST_MIN_VALUE, CAN_TEST_MAX_VALUE);
-        first_run = false;
-    }
-    
-    // Check for CRSF connection and motor command logic
-    if (crsf_is_connected()) {
-        if (crsf_is_armed()) {
-            // ARMED - Send motor commands based on CRSF input
-            // Convert CRSF channel to command value (using board-configured control channel)
-            float normalized_input = crsf_channel_to_normalized(CONTROL_CHANNEL); // -1.0 to +1.0
-            float command_range = CAN_TEST_MAX_VALUE - CAN_TEST_MIN_VALUE;
-            float command_value = CAN_TEST_MIN_VALUE + ((normalized_input + 1.0f) / 2.0f) * command_range;
-            
-            // Send the configured command type (rate limited to 2Hz)
-            if (current_time - last_motor_cmd_debug > 500) { // Send commands every 500ms (2Hz)
-                switch (CAN_TEST_COMMAND_TYPE) {
-                    case CAN_PACKET_SET_CURRENT:
-                        DEBUG_CAN_TEST("ARMED - CMD_ID=%d (%s) to VESC_ID=%d, value=%.3f [CRSF=%.3f]", 
-                                      CAN_TEST_COMMAND_TYPE, CAN_TEST_COMMAND_NAME, CAN_VESC_ID, command_value, normalized_input);
-                        comm_can_set_current(CAN_VESC_ID, command_value);
-                        break;
-                        
-                    case CAN_PACKET_SET_CURRENT_BRAKE:
-                        DEBUG_CAN_TEST("ARMED - CMD_ID=%d (%s) to VESC_ID=%d, value=%.3f [CRSF=%.3f]", 
-                                      CAN_TEST_COMMAND_TYPE, CAN_TEST_COMMAND_NAME, CAN_VESC_ID, command_value, normalized_input);
-                        comm_can_set_current_brake(CAN_VESC_ID, command_value);
-                        break;
-                        
-                    case CAN_PACKET_SET_RPM:
-                        DEBUG_CAN_TEST("ARMED - CMD_ID=%d (%s) to VESC_ID=%d, value=%.1f [CRSF=%.3f]", 
-                                      CAN_TEST_COMMAND_TYPE, CAN_TEST_COMMAND_NAME, CAN_VESC_ID, command_value, normalized_input);
-                        comm_can_set_rpm(CAN_VESC_ID, command_value);
-                        break;
-                        
-                    case CAN_PACKET_SET_POS:
-                        DEBUG_CAN_TEST("ARMED - CMD_ID=%d (%s) to VESC_ID=%d, value=%.3f [CRSF=%.3f]", 
-                                      CAN_TEST_COMMAND_TYPE, CAN_TEST_COMMAND_NAME, CAN_VESC_ID, command_value, normalized_input);
-                        comm_can_set_pos(CAN_VESC_ID, command_value);
-                        break;
-                        
-                    case CAN_PACKET_SET_POS_FLOATINGPOINT:
-                        DEBUG_CAN_TEST("ARMED - CMD_ID=%d (%s) to VESC_ID=%d, value=%.3f [CRSF=%.3f]", 
-                                      CAN_TEST_COMMAND_TYPE, CAN_TEST_COMMAND_NAME, CAN_VESC_ID, command_value, normalized_input);
-                        comm_can_set_pos_floatingpoint(CAN_VESC_ID, command_value);
-                        break;
-                        
-                    default:
-                        ESP_LOGW(TAG, "[CAN_TEST] Unsupported command type: %d", CAN_TEST_COMMAND_TYPE);
-                        break;
-                }
-                last_motor_cmd_debug = current_time;
-            }
-        } else {
-            // DISARMED - Send zero current for safety (rate limited to 1Hz)
-            if (current_time - last_motor_cmd_debug > 1000) { // Send commands every 1000ms (1Hz)
-                DEBUG_CAN_TEST("DISARMED - CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [SAFETY]", 
-                              CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
-                comm_can_set_current(CAN_VESC_ID, 0.0f);
-                last_motor_cmd_debug = current_time;
-            }
-        }
-    } else {
-        // NO CONNECTION - Apply failsafe (rate limited to 0.5Hz)
-        if (current_time - last_motor_cmd_debug > 2000) { // Send commands every 2000ms (0.5Hz)
-            if (CRSF_FAILSAFE_ENABLE_BRAKE) {
-                DEBUG_CAN_TEST("DISCONNECTED - CMD_ID=%d (SET_CURRENT_BRAKE) to VESC_ID=%d, value=%.3f [FAILSAFE]", 
-                              CAN_PACKET_SET_CURRENT_BRAKE, CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-                comm_can_set_current_brake(CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-            } else {
-                DEBUG_CAN_TEST("DISCONNECTED - CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAILSAFE]", 
-                              CAN_PACKET_SET_CURRENT, CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
-                comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
-            }
-            last_motor_cmd_debug = current_time;
-        }
-    }
-    
-    // Request VESC status less frequently - every 5 seconds to avoid flooding
-    if (current_time - last_status_request > 5000) {
-        // Check if we have recent data before requesting more
-        can_status_msg *status1 = comm_can_get_status_msg_id(CAN_VESC_ID);
-        can_status_msg_4 *status4 = comm_can_get_status_msg_4_id(CAN_VESC_ID);
-        
-        uint32_t status1_age = status1 ? (current_time - (status1->rx_time * portTICK_PERIOD_MS)) : 999999;
-        uint32_t status4_age = status4 ? (current_time - (status4->rx_time * portTICK_PERIOD_MS)) : 999999;
-        
-        DEBUG_CAN_TEST("VESC Status Check - Status1 age: %lums, Status4 age: %lums", status1_age, status4_age);
-        
-        // Let's check all possible VESC status message storage slots to see if messages
-        // are coming from a different CAN ID
-        bool found_any_recent = false;
-        for (int i = 0; i < 5; i++) {  // Check first 5 slots (reduced from 10 for less spam)
-            can_status_msg *check_status = comm_can_get_status_msg_index(i);
-            if (check_status && check_status->rx_time > 0) {
-                uint32_t rx_time_ms = check_status->rx_time * portTICK_PERIOD_MS;
-                uint32_t age = current_time - rx_time_ms;
-                if (age < 10000) {  // Less than 10 seconds old
-                    DEBUG_CAN_TEST("Status slot %d: ID=%d, Age=%lums, RPM=%.1f", i, check_status->id, age, check_status->rpm);
-                    found_any_recent = true;
-                }
-            }
-        }
-        
-        if (!found_any_recent) {
-            DEBUG_CAN_TEST("No recent VESC status messages found - VESC may not be responding");
-        }
-        
-        last_status_request = current_time;
-    }
-    
-    // Send ping every 30 seconds (less frequent)
-    if (current_time - last_ping > 30000) {
-        DEBUG_CAN_TEST("Sending ping to VESC ID %d...", CAN_VESC_ID);
-        HW_TYPE hw_type;
-        bool ping_result = comm_can_ping(CAN_VESC_ID, &hw_type);
-        DEBUG_CAN_TEST("Ping result: %s%s", ping_result ? "SUCCESS" : "FAILED", 
-                      ping_result ? "" : " - Check CAN wiring and VESC ID");
-        if (ping_result) {
-            DEBUG_CAN_TEST("Hardware type: %d", hw_type);
-        }
-        last_ping = current_time;
-    }
-    
-    // Print detailed VESC status every 10 seconds (less frequent)
-    if (current_time - last_detailed_print > 10000) {
-        can_status_msg *status1 = comm_can_get_status_msg_id(CAN_VESC_ID);
-        can_status_msg_4 *status4 = comm_can_get_status_msg_4_id(CAN_VESC_ID);
-        
-        DEBUG_CAN_TEST("=== VESC Status Summary ===");
-        DEBUG_CAN_TEST("ESP32 ID: %d, Target VESC ID: %d", CAN_ESP32_ID, CAN_VESC_ID);
-        
-        if (status1) {
-            uint32_t age_ms = current_time - (status1->rx_time * portTICK_PERIOD_MS);
-            DEBUG_CAN_TEST("Status1 - RPM: %.1f, Current: %.2fA, Duty: %.1f%%, Age: %lums", 
-                          status1->rpm, status1->current, status1->duty * 100.0f, age_ms);
-        } else {
-            DEBUG_CAN_TEST("Status1 - No data from VESC ID %d", CAN_VESC_ID);
-        }
-        
-        if (status4) {
-            uint32_t age_ms = current_time - (status4->rx_time * portTICK_PERIOD_MS);
-            DEBUG_CAN_TEST("Status4 - Position: %.3f rev, Temp FET: %.1f°C, Age: %lums", 
-                          status4->pid_pos_now, status4->temp_fet, age_ms);
-        } else {
-            DEBUG_CAN_TEST("Status4 - No position data from VESC ID %d", CAN_VESC_ID);
-        }
-        
-        last_detailed_print = current_time;
-    }
-}
-#endif
 
 // Task to handle CRSF data and control
 static void crsf_control_task(void *pvParameters) {
@@ -300,11 +118,6 @@ static void crsf_control_task(void *pvParameters) {
         encoder_update();
         
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        
-        #if CAN_TEST_MODE
-        // Run CAN test mode - reads VESC status and sends harmless packets
-        can_test_mode();
-        #endif
         
         // Request VESC position every 200ms for responsive control
         // VESC sends status messages automatically - we just check if we have recent data
@@ -430,8 +243,8 @@ static void crsf_control_task(void *pvParameters) {
             
             // Print channel data for debugging
             if (current_time - last_print > CRSF_DEBUG_PRINT_RATE_MS) {
-                uint32_t last_update = crsf_get_last_update_time();
                 #if DEBUG_CRSF_CHANNELS
+                uint32_t last_update = crsf_get_last_update_time();
                 uint32_t age_ms = current_time - last_update;
                 #endif
                 DEBUG_CRSF("Channels: CH1=%d CH2=%d CH3=%d CH4=%d CH5=%d Connected=%s Armed=%s Age=%lums",
@@ -448,9 +261,6 @@ static void crsf_control_task(void *pvParameters) {
             }
             
             // Send motor commands based on CRSF input and encoder feedback
-            #if CAN_TEST_MODE
-            // CAN test mode handles motor commands directly - skip main loop motor control
-            #else
             // Normal operation - send actual motor commands
             if (crsf_is_connected()) {
                 // Check if armed using utility function
@@ -532,10 +342,8 @@ static void crsf_control_task(void *pvParameters) {
                         
                         // Calculate position error (CRSF target - encoder position)
                         float position_error = crsf_target_degrees - encoder_degrees;
-                        
                         // Apply gear ratio compensation
                         float gear_compensated_error = position_error * GEAR_RATIO;
-                        
                         // Calculate new target position for VESC (in revolutions)
                         // vesc_current_position is already in revolutions, so convert degrees error to revolutions
                         float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
@@ -581,7 +389,6 @@ static void crsf_control_task(void *pvParameters) {
                     comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
                 }
             }
-            #endif // CAN_TEST_MODE
         }
         
         vTaskDelay(pdMS_TO_TICKS(CONTROL_TASK_DELAY_MS));
@@ -630,14 +437,6 @@ void app_main(void) {
     ESP_LOGI(TAG, "ESP32 CAN ID: %d", CAN_ESP32_ID);
     ESP_LOGI(TAG, "Target VESC CAN ID: %d", CAN_VESC_ID);
     
-#if CAN_TEST_MODE
-    ESP_LOGW(TAG, "=== CAN TEST MODE ENABLED ===");
-    ESP_LOGW(TAG, "Motor commands ENABLED when CH5 armed");
-    ESP_LOGW(TAG, "Command: CMD_ID=%d (%s), Range: %.1f to %.1f", 
-             CAN_TEST_COMMAND_TYPE, CAN_TEST_COMMAND_NAME, CAN_TEST_MIN_VALUE, CAN_TEST_MAX_VALUE);
-    ESP_LOGW(TAG, "Set CAN_TEST_MODE to 0 to enable full position control");
-#endif
-    
     // Initialize CAN communication
     #ifdef CAN_TX_GPIO_NUM
     ESP_LOGI(TAG, "Initializing CAN bus on TX: GPIO%d, RX: GPIO%d", CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
@@ -651,17 +450,21 @@ void app_main(void) {
     #endif
 
     // ============================================================================
-    // ENCODER INITIALIZATION WITH DELAY
+    // SENSOR INITIALIZATION WITH OPTIONAL DELAY
     // ============================================================================
-    ESP_LOGI(TAG, "Starting encoder initialization in 5 seconds...");
+    #if DEBUG_INIT_COUNTDOWN
+    ESP_LOGI(TAG, "Starting sensor initialization in 30 seconds...");
     ESP_LOGI(TAG, "This delay allows you to see initial system status");
     
-    for (int i = 5; i > 0; i--) {
-        ESP_LOGI(TAG, "Encoder initialization in %d seconds...", i);
+    for (int i = 30; i > 0; i--) {
+        ESP_LOGI(TAG, "Sensor initialization in %d seconds...", i);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
     
-    ESP_LOGI(TAG, "Proceeding with encoder initialization...");
+    ESP_LOGI(TAG, "Proceeding with sensor initialization...");
+    #else
+    ESP_LOGI(TAG, "Starting sensor initialization...");
+    #endif
 
     // Initialize encoder system based on board configuration
     #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID

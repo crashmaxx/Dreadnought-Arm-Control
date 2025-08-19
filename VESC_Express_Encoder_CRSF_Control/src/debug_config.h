@@ -15,6 +15,7 @@
 #define DEBUG_CAN_COMMANDS          0  // CAN command transmission
 #define DEBUG_ESPNOW_TELEMETRY      0  // ESP-NOW telemetry debugging
 #define DEBUG_VERBOSE               0  // Verbose SPI encoder and diagnostics debugging
+#define DEBUG_INIT_COUNTDOWN        0  // Enable 30 second sensor initialization countdown
 
 // =============================================================================
 // DEBUG MACROS
