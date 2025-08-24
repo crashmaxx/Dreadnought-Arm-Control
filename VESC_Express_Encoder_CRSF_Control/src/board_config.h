@@ -33,7 +33,7 @@
 
 #ifdef BOARD_LEFT_CLAW
   #define BOARD_NAME "Left_Claw"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE
   #define ENCODER_A_PIN 7
   #define ENCODER_B_PIN 6
   #define ENCODER_PWM_PIN 5
@@ -45,11 +45,15 @@
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 4
 
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+
   // Control parameters
   #define CONTROL_CHANNEL 4
-  #define MIN_ANGLE 20.0f
+  #define MIN_ANGLE 15.0f
   #define MAX_ANGLE 300.0f
-  #define MAX_VEL 8400.0f  // Maximum velocity for position commands
+  #define MAX_VEL 400.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
@@ -73,6 +77,10 @@
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 4
   
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+
   // Control parameters
   #define CONTROL_CHANNEL 4
   #define MIN_ANGLE 0.0f
@@ -101,10 +109,14 @@
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 3
   
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 13      // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 12      // CAN RX pin for ESP32-S3
+
   // Control parameters
   #define CONTROL_CHANNEL 3
-  #define MIN_ANGLE 0.0f
-  #define MAX_ANGLE 359.0f
+  #define MIN_ANGLE 55.0f
+  #define MAX_ANGLE 260.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -129,6 +141,10 @@
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 3
   
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 13      // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 12      // CAN RX pin for ESP32-S3
+
   // Control parameters
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f
@@ -156,11 +172,15 @@
   // CAN Configuration
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 2
-  
+
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+
   // Control parameters
   #define CONTROL_CHANNEL 2
-  #define MIN_ANGLE 140.0f
-  #define MAX_ANGLE 400.0f
+  #define MIN_ANGLE 60.0f
+  #define MAX_ANGLE 293.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -184,7 +204,11 @@
   // CAN Configuration
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 2
-  
+
+    // CAN bus pins
+  #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+
   // Control parameters
   #define CONTROL_CHANNEL 2
   #define MIN_ANGLE 0.0f
@@ -213,6 +237,10 @@
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 1
   
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 8       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 9       // CAN RX pin for ESP32-S3
+  
   // Control parameters
   #define CONTROL_CHANNEL 1
   #define MIN_ANGLE 0.0f
@@ -240,6 +268,10 @@
   // CAN Configuration
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 1
+
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 8       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 9       // CAN RX pin for ESP32-S3
   
   // Control parameters
   #define CONTROL_CHANNEL 1
@@ -270,6 +302,10 @@
   #define CAN_VESC_ID 115  // Custom VESC controller ID - modify as needed
   #define CAN_ESP32_ID 215  // ESP32 controller ID (VESC_ID + 100)
   
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 4       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 5       // CAN RX pin for ESP32-S3
+
   // Custom control parameters
   #define CONTROL_CHANNEL 3
   #define MIN_ANGLE 0.0f

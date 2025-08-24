@@ -32,8 +32,8 @@
 // #define UART_RX						44
 
 // CAN Bus pins (using available GPIO pins on ESP32-S3)
-#define CAN_TX_GPIO_NUM				13
-#define CAN_RX_GPIO_NUM				12
+//#define CAN_TX_GPIO_NUM				13
+//#define CAN_RX_GPIO_NUM				12
 
 
 // CRSF pins (using different pins for ESP32-S3)
