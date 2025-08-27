@@ -25,6 +25,7 @@
 #define ENCODER_TYPE_SPI_MAGNETIC   4
 #define ENCODER_TYPE_I2C_MAGNETIC   5
 #define ENCODER_TYPE_HALL_SENSOR    6
+#define ENCODER_TYPE_VESC_INTERNAL  7  // Use VESC's internal position feedback
 
 // ESPNOW Peer MAC address for telemetry
 #define PEER_MAC_ADDR {0x18, 0x8B, 0x0E, 0xFF, 0x02, 0xE4}  // Replace with your peer's MAC address
@@ -51,6 +52,7 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 4
+  #define REST_ANGLE 18.0f
   #define MIN_ANGLE 15.0f
   #define MAX_ANGLE 300.0f
   #define MAX_VEL 400.0f  // Maximum velocity for position commands
@@ -83,6 +85,7 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 4
+  #define REST_ANGLE 18.0f
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
   #define MAX_VEL 8400.0f  // Maximum velocity for position commands
@@ -115,6 +118,7 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 3
+  #define REST_ANGLE 65.0f
   #define MIN_ANGLE 55.0f
   #define MAX_ANGLE 260.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
@@ -147,6 +151,7 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 3
+  #define REST_ANGLE 65.0f
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
@@ -179,6 +184,7 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 2
+  #define REST_ANGLE 65.0f
   #define MIN_ANGLE 60.0f
   #define MAX_ANGLE 293.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands
@@ -211,6 +217,7 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 2
+  #define REST_ANGLE 65.0f
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands
@@ -226,7 +233,7 @@
 #ifdef BOARD_LEFT_SHOULDER
   #define BOARD_NAME "Left_Shoulder"
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
-  
+
   // SPI pins for magnetic encoder
   #define ENCODER_SPI_CS_PIN 10    // Chip Select
   #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In
@@ -243,6 +250,7 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
+  #define REST_ANGLE 30.0f
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 180.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
@@ -275,6 +283,7 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
+  #define REST_ANGLE 30.0f
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 180.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
@@ -308,6 +317,7 @@
 
   // Custom control parameters
   #define CONTROL_CHANNEL 3
+  #define REST_ANGLE 30.0f
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
   #define MAX_VEL 1000.0f   // Maximum velocity for position commands

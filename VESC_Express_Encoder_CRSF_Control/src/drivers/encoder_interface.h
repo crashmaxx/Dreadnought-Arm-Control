@@ -52,6 +52,7 @@ typedef struct {
     bool (*is_valid)(void);
     uint32_t (*get_error_count)(void);
     void (*reset_errors)(void);
+    bool (*set_zero_position)(float angle_deg);  // Set current position to specified angle
     const char* (*get_type_name)(void);
 } encoder_interface_t;
 
@@ -69,6 +70,7 @@ float encoder_get_velocity_deg_s(void);
 bool encoder_is_valid(void);
 uint32_t encoder_get_error_count(void);
 void encoder_reset_errors(void);
+bool encoder_set_zero_position(float angle_deg);  // Calibrate encoder to specified angle
 const char* encoder_get_type_name(void);
 encoder_data_t* encoder_get_data(void);
 
@@ -101,6 +103,10 @@ extern const encoder_interface_t i2c_encoder_interface;
 
 #if ENCODER_TYPE == ENCODER_TYPE_HALL_SENSOR
 extern const encoder_interface_t hall_encoder_interface;
+#endif
+
+#if ENCODER_TYPE == ENCODER_TYPE_VESC_INTERNAL
+extern const encoder_interface_t vesc_encoder_interface;
 #endif
 
 #endif /* ENCODER_INTERFACE_H_ */

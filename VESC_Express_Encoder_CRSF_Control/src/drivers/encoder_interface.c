@@ -24,6 +24,8 @@
 // Include encoder implementations based on configuration
 #if ENCODER_TYPE == ENCODER_TYPE_SPI_MAGNETIC
 // SPI encoder implementation is in encoder_spi.c
+#elif ENCODER_TYPE == ENCODER_TYPE_VESC_INTERNAL
+#include "encoder_vesc.h"
 #endif
 
 static const char *TAG = "ENCODER";
@@ -55,6 +57,9 @@ bool encoder_init(void) {
     #elif ENCODER_TYPE == ENCODER_TYPE_HALL_SENSOR
         encoder_interface = &hall_encoder_interface;
         ESP_LOGI(TAG, "Initializing Hall sensor encoder");
+    #elif ENCODER_TYPE == ENCODER_TYPE_VESC_INTERNAL
+        encoder_interface = &vesc_encoder_interface;
+        ESP_LOGI(TAG, "Initializing VESC internal encoder");
     #elif ENCODER_TYPE == ENCODER_TYPE_NONE
         ESP_LOGW(TAG, "No encoder configured");
         return false;
@@ -138,6 +143,21 @@ void encoder_reset_errors(void) {
     if (encoder_interface && encoder_interface->reset_errors) {
         encoder_interface->reset_errors();
     }
+}
+
+// Set encoder zero position (calibration)
+bool encoder_set_zero_position(float angle_deg) {
+    if (encoder_interface && encoder_interface->set_zero_position) {
+        bool result = encoder_interface->set_zero_position(angle_deg);
+        if (result) {
+            ESP_LOGI(TAG, "Encoder calibrated to %.1f degrees", angle_deg);
+        } else {
+            ESP_LOGW(TAG, "Encoder calibration failed");
+        }
+        return result;
+    }
+    ESP_LOGW(TAG, "Encoder calibration not supported by %s", encoder_get_type_name());
+    return false;
 }
 
 // Get encoder type name
