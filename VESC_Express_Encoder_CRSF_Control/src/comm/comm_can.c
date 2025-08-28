@@ -28,6 +28,7 @@
 #include "conf_general.h"
 #include "main.h"
 #include "crc.h"
+#include "board_config.h"
 
 // Debug configuration - set to 1 to enable CAN debug messages, 0 to disable
 #define CAN_DEBUG_ENABLE    0
@@ -375,6 +376,13 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 					printf("[CAN_DEBUG] Stored STATUS_4: ID=%d, Temp=%.1f°C, Pos=%.3f rev\n",
 					       id, stat_tmp_4->temp_fet, stat_tmp_4->pid_pos_now);
 				}
+				
+				// Trigger event-driven control logic when we receive Status 4 from our VESC
+				// This ensures position control is perfectly synchronized with fresh VESC data
+				if (id == CAN_VESC_ID) {
+					main_process_control_logic();
+				}
+				
 				break;
 			}
 		}

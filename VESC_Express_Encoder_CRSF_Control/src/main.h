@@ -83,4 +83,7 @@ void main_store_backup_data(void);
 bool main_init_done(void);
 void main_wait_until_init_done(void);
 
+// Control function called from CAN Status 4 callback
+void main_process_control_logic(void);
+
 #endif /* MAIN_H_ */

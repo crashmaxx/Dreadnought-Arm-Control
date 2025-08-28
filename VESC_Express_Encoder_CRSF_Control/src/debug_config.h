@@ -11,7 +11,7 @@
 #define DEBUG_POSITION_CONTROL      1  // Position control debugging
 #define DEBUG_ENCODER_DATA          1  // Encoder data debugging
 #define DEBUG_VESC_STATUS           1  // VESC status debugging (includes parameter updates)
-#define DEBUG_CRSF_CHANNELS         0  // CRSF channel data
+#define DEBUG_CRSF_CHANNELS         1  // CRSF channel data
 #define DEBUG_CAN_COMMANDS          1  // CAN command transmission
 #define DEBUG_ESPNOW_TELEMETRY      0  // ESP-NOW telemetry debugging
 #define DEBUG_VERBOSE               0  // Verbose SPI encoder and diagnostics debugging

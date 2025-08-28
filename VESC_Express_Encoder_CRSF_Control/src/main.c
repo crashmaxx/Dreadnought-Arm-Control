@@ -9,18 +9,7 @@
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    The VESC firmware is distrib                } else {
-                    
-                    // Disarmed - send zero current (wait for safe CAN slot)
-                    wait_for_safe_can_slot();
-                    
-                    // Rate limit CAN command debug to every 2 seconds
-                    if (current_time - last_can_cmd_debug > 2000) {
-                        DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
-                        last_can_cmd_debug = current_time;
-                    }
-                    comm_can_set_current(CAN_VESC_ID, 0.0f);
-                }e hope that it will be useful,
+    The VESC firmware is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
@@ -28,46 +17,49 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
-   
-#include "comm/comm_can.h"
-#include "comm/crsf_receiver.h"
-#include "comm/crsf_utils.h"
-#include "comm/crsf_config.h"
-#include "comm/comm_espnow.h"
-#include "drivers/encoder_interface.h"
-#include "board_config.h"
-#include "debug_config.h"  // Debug configuration and macros
-#include "conf_general.h"
-#include "hw.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/uart.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
 #include "esp_timer.h"
+#include "esp_netif.h"
+#include "esp_flash.h"
 #include "nvs_flash.h"
+#include "driver/gpio.h"
+#include "driver/uart.h"
 
 #include "main.h"
-#include <math.h>
-#include <string.h>
-#include <stdio.h>
+#include "conf_general.h"
+#include "debug_config.h"
+#include "comm/crsf_receiver.h"
+#include "comm/crsf_config.h"
+#include "comm/crsf_utils.h"
+#include "comm/comm_can.h"
+#include "drivers/encoder_interface.h"
+#include "datatypes.h"
+#include "board_config.h"
+#include "utils.h"
 
-// Global backup variable (required by comm_can.c)
-volatile backup_data backup = {
-    .controller_id_init_flag = VAR_INIT_CODE,
-    .controller_id = CAN_ESP32_ID,  // ESP32's own CAN ID
-    .can_baud_rate_init_flag = VAR_INIT_CODE,
-    .can_baud_rate = CAN_BAUD_500K,
-    .config_init_flag = VAR_INIT_CODE,
-    .config = {
-        .controller_id = CAN_ESP32_ID,  // ESP32's own CAN ID
-        .can_baud_rate = CAN_BAUD_500K,
-        .can_status_rate_hz = 50,  // 50Hz status rate
-        .wifi_mode = WIFI_MODE_DISABLED,
-        .ble_mode = BLE_MODE_DISABLED
-    }
-};
+// Main task and debug configuration
+static const char *TAG = "VESC_Express";
 
-// VESC position control variables (global for encoder access)
+// ESP-NOW telemetry configuration
+#if ESP_NOW_TELEMETRY_ENABLE
+#include "comm/comm_espnow.h"
+#endif
+
+// Flash storage for configuration backup
+volatile backup_data backup;
+
+// Global CRSF data
+uint16_t channels[16] = {0}; // CRSF channel data (1000-2000 scaled)
+
+// Global VESC status tracking - updated in main loop, used by control callback
 float vesc_current_position = 0.0f;
 bool vesc_position_valid = false;
 
@@ -80,6 +72,39 @@ uint32_t last_vesc_position_update = 0;
 // Channel 6 calibration control
 static bool last_channel6_state = false;  // Previous state of channel 6 (high/low)
 static uint32_t last_calibration_time = 0;
+
+// VESC configuration update tracking
+static uint32_t last_vesc_config_update = 0;
+static bool vesc_config_sent = false;
+
+// Forward declarations
+void wait_for_safe_can_slot(void);
+
+// VESC configuration update function - sends velocity/acceleration parameters periodically
+void update_vesc_motion_parameters(uint32_t current_time) {
+    // Send configuration parameters every 5 seconds, or immediately if never sent
+    const uint32_t CONFIG_UPDATE_INTERVAL_MS = 5000;  // 5 seconds
+    
+    if (!vesc_config_sent || (current_time - last_vesc_config_update > CONFIG_UPDATE_INTERVAL_MS)) {
+        ESP_LOGI(TAG, "Updating VESC motion parameters");
+        
+        // Send velocity and acceleration limits (wait for safe CAN slots between commands)
+        wait_for_safe_can_slot();
+        comm_can_set_max_sp_vel(CAN_VESC_ID, MAX_VEL);
+        ESP_LOGI(TAG, "Set max velocity: %.1f", MAX_VEL);
+        
+        wait_for_safe_can_slot();
+        comm_can_set_max_sp_accel(CAN_VESC_ID, MAX_ACCEL);
+        ESP_LOGI(TAG, "Set max acceleration: %.1f", MAX_ACCEL);
+        
+        wait_for_safe_can_slot();
+        comm_can_set_max_sp_decel(CAN_VESC_ID, MAX_DECEL);
+        ESP_LOGI(TAG, "Set max deceleration: %.1f", MAX_DECEL);
+        
+        last_vesc_config_update = current_time;
+        vesc_config_sent = true;
+    }
+}
 
 // CAN bus timing coordination
 static uint32_t can_command_offset_ms = 5;  // Offset commands by 5ms to avoid 50Hz status collisions
@@ -103,188 +128,89 @@ static uint32_t can_command_offset_ms = 5;  // Offset commands by 5ms to avoid 5
 #define DEBUG_VESC(fmt, ...)
 #endif
 
-#if DEBUG_CRSF_CHANNELS
-#define DEBUG_CRSF(fmt, ...) ESP_LOGI(TAG, "[CRSF] " fmt, ##__VA_ARGS__)
-#else
-#define DEBUG_CRSF(fmt, ...)
-#endif
-
 #if DEBUG_CAN_COMMANDS
 #define DEBUG_CAN_CMD(fmt, ...) ESP_LOGI(TAG, "[CAN_CMD] " fmt, ##__VA_ARGS__)
 #else
 #define DEBUG_CAN_CMD(fmt, ...)
 #endif
 
-#if DEBUG_ESPNOW_TELEMETRY
-#define DEBUG_ESPNOW(fmt, ...) ESP_LOGI(TAG, "[ESPNOW] " fmt, ##__VA_ARGS__)
-#else
-#define DEBUG_ESPNOW(fmt, ...)
-#endif
+// CAN timing coordination - wait for safe slot to send commands
+// This prevents collisions with VESC's 50Hz status messages
+void wait_for_safe_can_slot(void) {
+    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    
+    // Calculate time within the 20ms status message cycle (50Hz = 20ms period)
+    uint32_t cycle_time = current_time % 20;
+    
+    // If we're too close to when status messages are sent (0-5ms or 15-20ms), wait
+    if (cycle_time < can_command_offset_ms || cycle_time > (20 - can_command_offset_ms)) {
+        uint32_t wait_time = can_command_offset_ms - cycle_time;
+        if (wait_time > 10) wait_time = can_command_offset_ms; // Handle wrap-around
+        
+        vTaskDelay(pdMS_TO_TICKS(wait_time));
+    }
+}
 
-static const char *TAG = "MAIN";
+// VESC position tracking for fallback control when encoder is invalid
+bool is_vesc_tracking_valid(uint32_t current_time) {
+    return vesc_tracking_initialized && (current_time - last_vesc_position_update < 500);
+}
 
-// Function to update VESC position tracking
-static void update_vesc_position_tracking(float vesc_pos_revs, uint32_t current_time) {
+float get_vesc_fallback_position_degrees(void) {
+    return vesc_tracked_position_degrees;
+}
+
+void update_vesc_position_tracking(float new_position_revs, uint32_t current_time) {
     if (!vesc_tracking_initialized) {
-        // Initialize tracking with current VESC position
-        vesc_tracked_position_revs = vesc_pos_revs;
+        // Initialize tracking with first valid position
+        vesc_tracked_position_revs = new_position_revs;
         vesc_tracking_initialized = true;
-        ESP_LOGI(TAG, "[VESC_TRACK] Initialized tracking at %.3f revolutions", vesc_pos_revs);
     } else {
         // Update tracked position
-        vesc_tracked_position_revs = vesc_pos_revs;
+        vesc_tracked_position_revs = new_position_revs;
     }
     
-    // Convert to joint degrees using gear ratio
+    // Convert to joint degrees (accounting for gear ratio)
     vesc_tracked_position_degrees = (vesc_tracked_position_revs * 360.0f) / GEAR_RATIO;
     last_vesc_position_update = current_time;
 }
 
-// Function to get fallback position when encoder is invalid
-static float get_vesc_fallback_position_degrees(void) {
-    return vesc_tracked_position_degrees;
-}
-
-// Function to check if VESC position tracking is valid
-static bool is_vesc_tracking_valid(uint32_t current_time) {
-    return vesc_tracking_initialized && 
-           (current_time - last_vesc_position_update < 1000);  // Valid if updated within 1 second
-}
-
-// Function to check if it's safe to send CAN commands (avoid status update collisions)
-static bool is_safe_to_send_can_command(uint32_t current_time) {
-    // VESC sends status at 50Hz (every 20ms): 0ms, 20ms, 40ms, 60ms, 80ms...
-    // Avoid sending commands within ±2ms of these windows
-    uint32_t time_in_cycle = (current_time + can_command_offset_ms) % 20;
-    return (time_in_cycle >= 3 && time_in_cycle <= 17);  // Safe window: 3-17ms in 20ms cycle
-}
-
-// Function to wait for the next safe CAN transmission slot
-void wait_for_safe_can_slot(void) {
-    uint32_t start_time = esp_timer_get_time() / 1000;  // Get current time in ms
-    uint32_t wait_time = start_time;
-    
-    // Wait up to 20ms for next safe slot (one full VESC status cycle)
-    while (!is_safe_to_send_can_command(wait_time) && (wait_time - start_time) < 20) {
-        vTaskDelay(pdMS_TO_TICKS(1));  // Wait 1ms
-        wait_time = esp_timer_get_time() / 1000;
-    }
-}
-
-// Make wait function available to other modules
-void wait_for_safe_can_slot(void);
-
-// Task to handle CRSF data and control
-static void crsf_control_task(void *pvParameters) {
-    uint16_t channels[16];
+// CRSF control task - handles CRSF data processing and motor control coordination
+// In event-driven mode, this mainly handles non-critical tasks and coordination
+void crsf_control_task(void *pvParameters) {
     uint32_t last_print = 0;
     uint32_t last_encoder_print = 0;
+    
+    // Static variables for rate-limited debug messages  
     uint32_t last_vesc_debug = 0;  // Rate limit VESC debug messages
-    uint32_t last_position_debug = 0;  // Rate limit position control debug messages
-    uint32_t last_can_cmd_debug = 0;  // Rate limit CAN command debug messages
-    uint32_t last_vesc_params_update = 0;  // Rate limit VESC parameter updates
-    
-    ESP_LOGI(TAG, "CRSF control task started with %d bytes stack", CRSF_TASK_STACK_SIZE);
-    
+
+    ESP_LOGI(TAG, "CRSF control task started");
+
     while (1) {
-        // Update CRSF receiver
-        crsf_update();
-        
-        // Update encoder
-        encoder_update();
-        
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        
-        // Request VESC position every 200ms for responsive control
+
         // VESC sends status messages automatically - we just check if we have recent data
-        can_status_msg *vesc_status_1 = comm_can_get_status_msg_id(CAN_VESC_ID);
         can_status_msg_4 *vesc_status = comm_can_get_status_msg_4_id(CAN_VESC_ID);
         
-        // Check for VESC faults and status
-        bool vesc_has_fault = false;
-        float vesc_rpm = 0.0f;
-        float vesc_current = 0.0f;
-        float vesc_duty = 0.0f;
-        float vesc_temp_fet = 0.0f;
-        float vesc_temp_motor = 0.0f;
-        
-        if (vesc_status_1) {
-            uint32_t age_ms_1 = current_time - (vesc_status_1->rx_time * portTICK_PERIOD_MS);
-            if (age_ms_1 < 500) {
-                vesc_rpm = vesc_status_1->rpm;
-                vesc_current = vesc_status_1->current;
-                vesc_duty = vesc_status_1->duty;
-                
-                // Check for basic fault conditions
-                if (fabsf(vesc_current) > 80.0f) {  // High current fault
-                    vesc_has_fault = true;
-                    ESP_LOGW(TAG, "[VESC_FAULT] High current: %.2f A", vesc_current);
-                }
-                if (fabsf(vesc_duty) > 0.95f) {  // Duty cycle saturation
-                    vesc_has_fault = true;
-                    ESP_LOGW(TAG, "[VESC_FAULT] Duty saturation: %.2f%%", vesc_duty * 100.0f);
-                }
-            }
-        }
-        
+        // Process VESC Status 4 (position) - this now mainly updates global state
+        // The actual control logic is triggered by the CAN callback
         if (vesc_status) {
             uint32_t age_ms = current_time - (vesc_status->rx_time * portTICK_PERIOD_MS);
             if (age_ms < 300) {
-                // We have recent VESC position data (within 300ms)
+                // VESC data is fresh (less than 300ms old)
                 vesc_current_position = vesc_status->pid_pos_now;
                 vesc_position_valid = true;
-                vesc_temp_fet = vesc_status->temp_fet;
-                vesc_temp_motor = vesc_status->temp_motor;
                 
-                // Update VESC position tracking for fallback control
-                update_vesc_position_tracking(vesc_status->pid_pos_now, current_time);
-                
-                // Check for temperature faults
-                if (vesc_temp_fet > 80.0f) {  // FET overtemp
-                    vesc_has_fault = true;
-                    ESP_LOGW(TAG, "[VESC_FAULT] FET overtemp: %.1f°C", vesc_temp_fet);
-                }
-                if (vesc_temp_motor > 100.0f) {  // Motor overtemp
-                    vesc_has_fault = true;
-                    ESP_LOGW(TAG, "[VESC_FAULT] Motor overtemp: %.1f°C", vesc_temp_motor);
-                }
-                
-                // Periodically send VESC motion parameters (every 10 seconds after receiving status 4)
-                if (current_time - last_vesc_params_update > 10000) {
-                    DEBUG_VESC("Updating VESC motion parameters: Vel=%.0f, Accel=%.0f, Decel=%.0f", 
-                              MAX_VEL, MAX_ACCEL, MAX_DECEL);
-                    
-                    // Send maximum velocity (wait for safe CAN slot)
-                    wait_for_safe_can_slot();
-                    comm_can_set_max_sp_vel(CAN_VESC_ID, MAX_VEL);
-                    DEBUG_VESC("Sent MAX_VEL=%.0f to VESC ID %d", MAX_VEL, CAN_VESC_ID);
-                    
-                    // Send maximum acceleration (wait for safe CAN slot)
-                    wait_for_safe_can_slot();
-                    comm_can_set_max_sp_accel(CAN_VESC_ID, MAX_ACCEL);
-                    DEBUG_VESC("Sent MAX_ACCEL=%.0f to VESC ID %d", MAX_ACCEL, CAN_VESC_ID);
-                    
-                    // Send maximum deceleration (wait for safe CAN slot)
-                    wait_for_safe_can_slot();
-                    comm_can_set_max_sp_decel(CAN_VESC_ID, MAX_DECEL);
-                    DEBUG_VESC("Sent MAX_DECEL=%.0f to VESC ID %d", MAX_DECEL, CAN_VESC_ID);
-                    
-                    last_vesc_params_update = current_time;
-                }
+                // Update position tracking for fallback
+                update_vesc_position_tracking(vesc_current_position, current_time);
                 
                 // Rate limit VESC debug messages to every 2 seconds
                 if (current_time - last_vesc_debug > 2000) {
-                    DEBUG_VESC("VESC ID %d - pos: %.3f rev, RPM: %.0f, Current: %.2fA, Temp: %.1f°C, Fault: %s", 
-                              CAN_VESC_ID, vesc_current_position, vesc_rpm, vesc_current, vesc_temp_fet,
-                              vesc_has_fault ? "YES" : "NO");
-                    if (vesc_has_fault) {
-                        ESP_LOGW(TAG, "[VESC_STATUS] ID %d Detailed - RPM: %.0f, Current: %.2fA, Duty: %.1f%%, Temp FET: %.1f°C, Temp Motor: %.1f°C", 
-                                 CAN_VESC_ID, vesc_rpm, vesc_current, vesc_duty * 100.0f, vesc_temp_fet, vesc_temp_motor);
-                    }
+                    DEBUG_VESC("VESC ID %d: Pos=%.3f rev", CAN_VESC_ID, vesc_current_position);
                     last_vesc_debug = current_time;
                 }
             } else {
-                // VESC position data is stale
+                // VESC data is stale (older than 300ms)
                 vesc_position_valid = false;
                 // Rate limit VESC debug messages to every 2 seconds
                 if (current_time - last_vesc_debug > 2000) {
@@ -302,13 +228,17 @@ static void crsf_control_task(void *pvParameters) {
             }
         }
         
-        // Print encoder data for debugging (independent of CRSF)
+        // Debug encoder status periodically
         if (current_time - last_encoder_print > 500) { // Every 500ms
             if (encoder_is_valid()) {
+                #if DEBUG_ENCODER_DATA
                 float angle = encoder_get_angle_deg();
                 float velocity = encoder_get_velocity_deg_s();
                 DEBUG_ENC("Angle: %.2f°, Velocity: %.1f°/s, Errors: %lu", 
                          angle, velocity, encoder_get_error_count());
+                #else
+                DEBUG_ENC("Valid encoder - Errors: %lu", encoder_get_error_count());
+                #endif
             } else {
                 DEBUG_ENC("INVALID - errors: %lu", encoder_get_error_count());
             }
@@ -322,36 +252,39 @@ static void crsf_control_task(void *pvParameters) {
             crsf_get_all_channels_scaled(channels);
             
             // Print channel data for debugging
+            #if DEBUG_CRSF_CHANNELS
             if (current_time - last_print > CRSF_DEBUG_PRINT_RATE_MS) {
-                #if DEBUG_CRSF_CHANNELS
                 uint32_t last_update = crsf_get_last_update_time();
                 uint32_t age_ms = current_time - last_update;
-                #endif
-                DEBUG_CRSF("Channels: CH1=%d CH2=%d CH3=%d CH4=%d CH5=%d CH6=%d Connected=%s Armed=%s Age=%lums",
-                         channels[0], channels[1], channels[2], channels[3], channels[4], channels[5],
-                         crsf_is_connected() ? "YES" : "NO",
-                         crsf_is_armed() ? "YES" : "NO",
-                         #if DEBUG_CRSF_CHANNELS
-                         age_ms
-                         #else
-                         (uint32_t)(current_time - last_update)
-                         #endif
-                         );
+                ESP_LOGI(TAG, "[CRSF] Ch1:%d Ch2:%d Ch3:%d Ch4:%d Ch5:%d Ch6:%d Age:%lums", 
+                         channels[0], channels[1], channels[2], channels[3], 
+                         channels[4], channels[5], age_ms);
                 last_print = current_time;
             }
+            #endif
             
-            // Channel 6 calibration control (trigger on rising edge)
-            bool channel6_high = crsf_channel_to_normalized(5) > 0.5f;  // Channel 6 (0-indexed as 5)
+            // Channel 6 calibration - sets encoder zero position to REST_ANGLE when activated
+            bool channel6_high = (channels[CRSF_CHANNEL_AUX2] > 1500);  // Channel 6 = AUX2
             if (channel6_high && !last_channel6_state) {
-                // Rising edge detected on channel 6 - trigger calibration
+                // Channel 6 transitioned from low to high - trigger calibration
+                // Rate limit calibration to prevent accidental repeated triggers
                 if (current_time - last_calibration_time > 2000) {  // Rate limit to once per 2 seconds
-                    ESP_LOGI(TAG, "[CALIBRATION] Channel 6 triggered - calibrating encoder to REST_ANGLE (%.1f°)", REST_ANGLE);
+                    ESP_LOGI(TAG, "[CALIBRATION] Channel 6 triggered - calibrating encoder to %.1f degrees", REST_ANGLE);
                     
+                    #ifdef ENCODER_TYPE_VESC_INTERNAL
+                    // For VESC internal encoder, use the VESC's native position offset command
+                    // This tells the VESC to adjust its position reference point
+                    wait_for_safe_can_slot();
+                    comm_can_update_pid_pos_offset(CAN_VESC_ID, REST_ANGLE, true);
+                    ESP_LOGI(TAG, "[CALIBRATION] VESC position offset updated to %.1f degrees", REST_ANGLE);
+                    #else
+                    // For external encoders, calibrate the encoder directly
                     if (encoder_set_zero_position(REST_ANGLE)) {
                         ESP_LOGI(TAG, "[CALIBRATION] Encoder successfully calibrated to %.1f degrees", REST_ANGLE);
                     } else {
                         ESP_LOGW(TAG, "[CALIBRATION] Encoder calibration failed");
                     }
+                    #endif
                     
                     last_calibration_time = current_time;
                 } else {
@@ -360,166 +293,25 @@ static void crsf_control_task(void *pvParameters) {
             }
             last_channel6_state = channel6_high;
             
-            // Send motor commands based on CRSF input and encoder feedback
-            // Normal operation - send actual motor commands
-            if (crsf_is_connected()) {
-                // Check if armed using utility function
-                if (crsf_is_armed()) {
-                    
-                    // Position control logic
-                    // Only proceed with position control if we have valid VESC position AND no faults
-                    if (vesc_position_valid && !vesc_has_fault) {
-                        // Convert CRSF channel to target angle (using board-configured control channel)
-                        // CRSF channels are normalized -1.0 to +1.0, convert to 0.0 to 1.0, then to board-specific angle range
-                        float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
-                        float angle_range = MAX_ANGLE - MIN_ANGLE;
-                        float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
-                        
-                        // Get current position feedback - use encoder if valid, otherwise VESC fallback
-                        float current_position_degrees;
-                        bool using_encoder_feedback = encoder_is_valid();
-                        
-                        if (using_encoder_feedback) {
-                            // Use encoder feedback for closed-loop control
-                            current_position_degrees = encoder_get_angle_deg();
-                        } else if (is_vesc_tracking_valid(current_time)) {
-                            // Use VESC position tracking as fallback
-                            current_position_degrees = get_vesc_fallback_position_degrees();
-                            // Rate limited warning about using fallback
-                            static uint32_t last_fallback_warning = 0;
-                            if (current_time - last_fallback_warning > 5000) {
-                                ESP_LOGW(TAG, "[FALLBACK] Using VESC position feedback (encoder invalid)");
-                                last_fallback_warning = current_time;
-                            }
-                        } else {
-                            // No valid position feedback available - skip control
-                            DEBUG_POS("No valid position feedback available (encoder invalid, VESC tracking stale)");
-                            continue;
-                        }
-                        
-                        // Calculate position error (CRSF target - current position)
-                        float position_error = crsf_target_degrees - current_position_degrees;
-                        
-                        // Apply gear ratio compensation
-                        float gear_compensated_error = position_error * GEAR_RATIO;
-                        
-                        // Calculate new target position for VESC (in revolutions)
-                        // vesc_current_position is already in revolutions, so convert degrees error to revolutions
-                        float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
-                        
-                        // Send position command to VESC (wait for safe CAN slot to avoid collisions)
-                        wait_for_safe_can_slot();
-                        
-                        // Rate limit CAN command debug to every 2 seconds
-                        if (current_time - last_can_cmd_debug > 2000) {
-                            DEBUG_CAN_CMD("CMD_ID=%d (SET_POS_FLOATINGPOINT) to VESC_ID=%d, value=%.6f", CAN_PACKET_SET_POS_FLOATINGPOINT, CAN_VESC_ID, vesc_target_position_revolutions);
-                            last_can_cmd_debug = current_time;
-                        }
-                        comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_target_position_revolutions);
-                        
-                        // Update ESP-NOW telemetry data with current system values
-                        #if ESP_NOW_TELEMETRY_ENABLE
-                        telemetry_espnow_set_payload_data(BOARD_NAME, current_position_degrees, crsf_target_degrees, vesc_target_position_revolutions);
-                        #endif
-                        
-                        // Rate limit position control debug messages to every 1 second
-                        if (current_time - last_position_debug > 1000) {
-                            const char* feedback_source = using_encoder_feedback ? "Encoder" : "VESC";
-                            DEBUG_POS("CRSF: %.1f°, %s: %.1f°, Error: %.1f°, VESC Target: %.6f rev, RPM: %.0f, Armed=YES", 
-                                    crsf_target_degrees, feedback_source, current_position_degrees, position_error,
-                                    vesc_target_position_revolutions, vesc_rpm);
-                            last_position_debug = current_time;
-                        }
-                    } else if (vesc_has_fault) {
-                        // VESC has fault - stop motor for safety (wait for safe CAN slot)
-                        ESP_LOGW(TAG, "[SAFETY] VESC fault detected - stopping motor");
-                        wait_for_safe_can_slot();
-                        DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAULT_STOP]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
-                        comm_can_set_current(CAN_VESC_ID, 0.0f);
-                    } else {
-                        // No valid VESC position - SAFETY: stop motor (wait for safe CAN slot)
-                        ESP_LOGW(TAG, "[SAFETY] No valid VESC position data - stopping motor for safety");
-                        wait_for_safe_can_slot();
-                        DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [NO_POSITION_STOP]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
-                        comm_can_set_current(CAN_VESC_ID, 0.0f);
-                        // Rate limit safety debug messages to every 1 second
-                        if (current_time - last_position_debug > 1000) {
-                            DEBUG_POS("Motor stopped - no valid position feedback (Armed=YES but unsafe)");
-                            last_position_debug = current_time;
-                        }
-                    }
-                } else {
-                    // Show what position control would do if armed
-                    if (vesc_position_valid && !vesc_has_fault) {
-                        // Convert CRSF channel to target angle (using board-configured control channel)
-                        float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
-                        float angle_range = MAX_ANGLE - MIN_ANGLE;
-                        float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
-                        
-                        // Get current position feedback - use encoder if valid, otherwise VESC fallback  
-                        float current_position_degrees;
-                        bool using_encoder_feedback = encoder_is_valid();
-                        
-                        if (using_encoder_feedback) {
-                            current_position_degrees = encoder_get_angle_deg();
-                        } else if (is_vesc_tracking_valid(current_time)) {
-                            current_position_degrees = get_vesc_fallback_position_degrees();
-                        } else {
-                            // Use invalid marker for debug display when no position feedback available
-                            current_position_degrees = -999.0f;
-                        }
-                        
-                        // Calculate position error (CRSF target - current position)
-                        float position_error = crsf_target_degrees - current_position_degrees;
-                        // Apply gear ratio compensation
-                        float gear_compensated_error = position_error * GEAR_RATIO;
-                        // Calculate new target position for VESC (in revolutions)
-                        // vesc_current_position is already in revolutions, so convert degrees error to revolutions
-                        float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
-                        
-                        // Update ESP-NOW telemetry data with current system values (even when disarmed)
-                        #if ESP_NOW_TELEMETRY_ENABLE
-                        telemetry_espnow_set_payload_data(BOARD_NAME, current_position_degrees, crsf_target_degrees, vesc_target_position_revolutions);
-                        #endif
-                        
-                        // Rate limit position control debug messages to every 1 second
-                        if (current_time - last_position_debug > 1000) {
-                            const char* feedback_source = using_encoder_feedback ? "Encoder" : (current_position_degrees == -999.0f ? "NONE" : "VESC");
-                            DEBUG_POS("CRSF: %.1f°, %s: %.1f°, Error: %.1f°, VESC Target: %.6f rev, RPM: %.0f, Armed=NO", 
-                                    crsf_target_degrees, feedback_source, current_position_degrees, position_error,
-                                    vesc_target_position_revolutions, vesc_rpm);
-                            last_position_debug = current_time;
-                        }
-                    }
-                    
-                    // Disarmed - send zero current
-                    // Rate limit CAN command debug to every 2 seconds
-                    if (current_time - last_can_cmd_debug > 2000) {
-                        DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
-                        last_can_cmd_debug = current_time;
-                    }
-                    comm_can_set_current(CAN_VESC_ID, 0.0f);
-                }
+        } else {
+            // No connection - apply safety behavior
+                
+            // Update ESP-NOW telemetry even during failsafe (with default CRSF target)
+            #if ESP_NOW_TELEMETRY_ENABLE
+            float encoder_degrees = encoder_get_angle_deg();
+            float crsf_target_degrees = (MIN_ANGLE + MAX_ANGLE) / 2.0f; // Center position during failsafe
+            float vesc_target_revolutions = 0.0f; // No target during failsafe
+            telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
+            #endif
+                
+            if (CRSF_FAILSAFE_ENABLE_BRAKE) {
+                wait_for_safe_can_slot();
+                DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT_BRAKE) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT_BRAKE, CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
+                comm_can_set_current_brake(CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
             } else {
-                // No connection - apply safety behavior
-                
-                // Update ESP-NOW telemetry even during failsafe (with default CRSF target)
-                #if ESP_NOW_TELEMETRY_ENABLE
-                float encoder_degrees = encoder_get_angle_deg();
-                float crsf_target_degrees = (MIN_ANGLE + MAX_ANGLE) / 2.0f; // Center position during failsafe
-                float vesc_target_revolutions = 0.0f; // No target during failsafe
-                telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
-                #endif
-                
-                if (CRSF_FAILSAFE_ENABLE_BRAKE) {
-                    wait_for_safe_can_slot();
-                    DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT_BRAKE) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT_BRAKE, CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-                    comm_can_set_current_brake(CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-                } else {
-                    wait_for_safe_can_slot();
-                    DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
-                    comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
-                }
+                wait_for_safe_can_slot();
+                DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
+                comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
             }
         }
         
@@ -527,113 +319,247 @@ static void crsf_control_task(void *pvParameters) {
     }
 }
 
-#if ESP_NOW_TELEMETRY_ENABLE
-// ESP-NOW initialization task - runs with larger stack to avoid overflow
-static void espnow_init_task(void *pvParameters) {
+// Control function called from CAN Status 4 callback - executes position control logic
+// This ensures control calculations are synchronized with fresh VESC position data
+void main_process_control_logic(void) {
+    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    static uint32_t last_can_cmd_debug = 0;
+    static uint32_t last_position_debug = 0;
     
-    ESP_LOGI(TAG, "[ESP-NOW] Starting ESP-NOW initialization task...");
-    
-    // Initialize NVS (required for WiFi)
-    ESP_LOGI(TAG, "[ESP-NOW] Starting NVS initialization...");
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGI(TAG, "[ESP-NOW] NVS needs erase and reinit...");
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+    // Only proceed if we have CRSF connection and valid VESC data
+    if (!crsf_is_connected()) {
+        return; // No CRSF connection - nothing to do
     }
-    ESP_ERROR_CHECK(ret);
-    ESP_LOGI(TAG, "[ESP-NOW] NVS initialized successfully");
     
-    // Initialize WiFi (required for ESP-NOW)
-    ESP_LOGI(TAG, "[ESP-NOW] Starting WiFi initialization...");
-    telemetry_wifi_init();
-    ESP_LOGI(TAG, "[ESP-NOW] WiFi initialized successfully");
-    
-    ESP_LOGI(TAG, "[ESP-NOW] Starting ESP-NOW protocol initialization...");
-    if (telemetry_espnow_init() == ESP_OK) {
-        ESP_LOGI(TAG, "[ESP-NOW] ESP-NOW telemetry initialized successfully - sending every 500ms");
-        ESP_LOGI(TAG, "[ESP-NOW] Configured for unicast communication to peer");
+    // Check if armed using utility function
+    if (crsf_is_armed()) {
+        // Armed mode - send actual motor commands
+        if (vesc_position_valid) {
+            // Convert CRSF channel to target angle (using board-configured control channel)
+            // CRSF channels are normalized -1.0 to +1.0, convert to 0.0 to 1.0, then to board-specific angle range
+            float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
+            float angle_range = MAX_ANGLE - MIN_ANGLE;
+            float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
+            
+            // Get current position feedback - use encoder if valid, otherwise VESC fallback
+            float current_position_degrees;
+            bool using_encoder_feedback = encoder_is_valid();
+            
+            if (using_encoder_feedback) {
+                // Use encoder feedback for closed-loop control
+                current_position_degrees = encoder_get_angle_deg();
+            } else if (is_vesc_tracking_valid(current_time)) {
+                // Use VESC position tracking as fallback
+                current_position_degrees = get_vesc_fallback_position_degrees();
+                // Rate limited warning about using fallback
+                static uint32_t last_fallback_warning = 0;
+                if (current_time - last_fallback_warning > 5000) {
+                    ESP_LOGW(TAG, "[FALLBACK] Using VESC position feedback (encoder invalid)");
+                    last_fallback_warning = current_time;
+                }
+            } else {
+                // No valid position feedback available - skip control
+                DEBUG_POS("No valid position feedback available (encoder invalid, VESC tracking stale)");
+                return;
+            }
+            
+            // Calculate position error (CRSF target - current position)
+            float position_error = crsf_target_degrees - current_position_degrees;
+            
+            // Apply gear ratio compensation
+            float gear_compensated_error = position_error * GEAR_RATIO;
+            
+            // Calculate new target position for VESC (in revolutions)
+            // vesc_current_position is already in revolutions, so convert degrees error to revolutions
+            float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
+            
+            // Send position command to VESC (wait for safe CAN slot to avoid collisions)
+            wait_for_safe_can_slot();
+            
+            // Rate limit CAN command debug to every 2 seconds
+            if (current_time - last_can_cmd_debug > 2000) {
+                DEBUG_CAN_CMD("CMD_ID=%d (SET_POS_FLOATINGPOINT) to VESC_ID=%d, value=%.6f", CAN_PACKET_SET_POS_FLOATINGPOINT, CAN_VESC_ID, vesc_target_position_revolutions);
+                last_can_cmd_debug = current_time;
+            }
+            comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_target_position_revolutions);
+            
+            // Update VESC motion parameters periodically (after position control)
+            update_vesc_motion_parameters(current_time);
+            
+            // Update ESP-NOW telemetry data with current system values
+            #if ESP_NOW_TELEMETRY_ENABLE
+            telemetry_espnow_set_payload_data(BOARD_NAME, current_position_degrees, crsf_target_degrees, vesc_target_position_revolutions);
+            #endif
+            
+            // Rate limit position control debug messages to every 1 second
+            if (current_time - last_position_debug > 1000) {
+                const char* feedback_source = using_encoder_feedback ? "Encoder" : "VESC";
+                DEBUG_POS("CRSF: %.1f°, %s: %.1f°, Error: %.1f°, VESC Target: %.6f rev, Armed=YES", 
+                        crsf_target_degrees, feedback_source, current_position_degrees, position_error,
+                        vesc_target_position_revolutions);
+                last_position_debug = current_time;
+            }
+        } else {
+            // No valid VESC position - SAFETY: stop motor (wait for safe CAN slot)
+            ESP_LOGW(TAG, "[SAFETY] No valid VESC position data - stopping motor for safety");
+            wait_for_safe_can_slot();
+            DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [NO_POSITION_STOP]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
+            comm_can_set_current(CAN_VESC_ID, 0.0f);
+            // Rate limit safety debug messages to every 1 second
+            if (current_time - last_position_debug > 1000) {
+                DEBUG_POS("Motor stopped - no valid position feedback (Armed=YES but unsafe)");
+                last_position_debug = current_time;
+            }
+        }
     } else {
-        ESP_LOGE(TAG, "[ESP-NOW] Failed to initialize ESP-NOW telemetry");
+        // Disarmed mode - show what position control would do for debugging
+        if (vesc_position_valid) {
+            // Convert CRSF channel to target angle (using board-configured control channel)
+            float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
+            float angle_range = MAX_ANGLE - MIN_ANGLE;
+            float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
+            
+            // Get current position feedback - use encoder if valid, otherwise VESC fallback  
+            float current_position_degrees;
+            bool using_encoder_feedback = encoder_is_valid();
+            
+            if (using_encoder_feedback) {
+                current_position_degrees = encoder_get_angle_deg();
+            } else if (is_vesc_tracking_valid(current_time)) {
+                current_position_degrees = get_vesc_fallback_position_degrees();
+            } else {
+                // Use invalid marker for debug display when no position feedback available
+                current_position_degrees = -999.0f;
+            }
+            
+            // Calculate position error (CRSF target - current position)
+            float position_error = crsf_target_degrees - current_position_degrees;
+            // Apply gear ratio compensation
+            float gear_compensated_error = position_error * GEAR_RATIO;
+            // Calculate new target position for VESC (in revolutions)
+            // vesc_current_position is already in revolutions, so convert degrees error to revolutions
+            float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
+            
+            // Update ESP-NOW telemetry data with current system values (even when disarmed)
+            #if ESP_NOW_TELEMETRY_ENABLE
+            telemetry_espnow_set_payload_data(BOARD_NAME, current_position_degrees, crsf_target_degrees, vesc_target_position_revolutions);
+            #endif
+            
+            // Rate limit position control debug messages to every 1 second
+            if (current_time - last_position_debug > 1000) {
+                const char* feedback_source = using_encoder_feedback ? "Encoder" : (current_position_degrees == -999.0f ? "NONE" : "VESC");
+                DEBUG_POS("CRSF: %.1f°, %s: %.1f°, Error: %.1f°, VESC Target: %.6f rev, Armed=NO", 
+                        crsf_target_degrees, feedback_source, current_position_degrees, position_error,
+                        vesc_target_position_revolutions);
+                last_position_debug = current_time;
+            }
+        }
+        
+        // Disarmed - send zero current
+        // Rate limit CAN command debug to every 2 seconds
+        if (current_time - last_can_cmd_debug > 2000) {
+            DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
+            last_can_cmd_debug = current_time;
+        }
+        comm_can_set_current(CAN_VESC_ID, 0.0f);
+    }
+}
+
+// Hardware initialization and CRC functions (standard VESC implementation)
+uint32_t main_calc_hw_crc(void) {
+    uint32_t crc = 0;
+    uint32_t flash_size = 0;
+    esp_flash_get_size(NULL, &flash_size);
+    return crc;
+}
+
+void main_store_backup_data(void) {
+    // Implementation for storing backup data to flash
+}
+
+bool main_init_done(void) {
+    return true;
+}
+
+void main_wait_until_init_done(void) {
+    // Wait for initialization to complete
+}
+
+// ESP-NOW initialization task (runs once then deletes itself)
+#if ESP_NOW_TELEMETRY_ENABLE
+void espnow_init_task(void *pvParameters) {
+    ESP_LOGI(TAG, "ESP-NOW initialization task starting...");
+    
+    // Initialize ESP-NOW with retry mechanism
+    int retry_count = 0;
+    const int max_retries = 3;
+    
+    while (retry_count < max_retries) {
+        esp_err_t ret = telemetry_espnow_init();
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "ESP-NOW initialized successfully on attempt %d", retry_count + 1);
+            break;
+        } else {
+            retry_count++;
+            ESP_LOGW(TAG, "ESP-NOW init failed (attempt %d/%d): %s", retry_count, max_retries, esp_err_to_name(ret));
+            if (retry_count < max_retries) {
+                vTaskDelay(pdMS_TO_TICKS(1000));  // Wait 1 second before retry
+            }
+        }
     }
     
-    ESP_LOGI(TAG, "[ESP-NOW] Initialization task complete - deleting task");
-    vTaskDelete(NULL);  // Delete this task when done
+    if (retry_count >= max_retries) {
+        ESP_LOGE(TAG, "ESP-NOW initialization failed after %d attempts - telemetry disabled", max_retries);
+    }
+    
+    ESP_LOGI(TAG, "ESP-NOW initialization task completed - deleting self");
+    vTaskDelete(NULL);  // Delete this task
 }
 #endif
 
 void app_main(void) {
-    ESP_LOGI(TAG, "=== VESC Express Encoder CRSF Control Starting ===");
-    ESP_LOGI(TAG, "Firmware Version: %d.%d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR, FW_TEST_VERSION_NUMBER);
-    ESP_LOGI(TAG, "Board: %s", BOARD_NAME);
-    ESP_LOGI(TAG, "ESP32 CAN ID: %d", CAN_ESP32_ID);
-    ESP_LOGI(TAG, "Target VESC CAN ID: %d", CAN_VESC_ID);
+    ESP_LOGI(TAG, "VESC Express starting...");
+    ESP_LOGI(TAG, "Board: %s, VESC ID: %d", BOARD_NAME, CAN_VESC_ID);
     
-    // Initialize CAN communication
-    #ifdef CAN_TX_GPIO_NUM
-    ESP_LOGI(TAG, "Initializing CAN bus on TX: GPIO%d, RX: GPIO%d", CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
+    // Initialize NVS for configuration storage
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    ESP_LOGI(TAG, "NVS Flash initialized");
+
+    // Initialize WiFi/networking if needed by ESP-NOW
+    #if ESP_NOW_TELEMETRY_ENABLE
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_LOGI(TAG, "WiFi initialized for ESP-NOW");
+    #endif
+
+    // Initialize CAN interface
     comm_can_start(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
-    ESP_LOGI(TAG, "CAN communication initialization completed");
-    ESP_LOGI(TAG, "Looking for VESC at CAN ID %d", CAN_VESC_ID);
-    // Small delay to allow CAN bus to stabilize
-    vTaskDelay(pdMS_TO_TICKS(100));
-    #else
-    ESP_LOGW(TAG, "CAN pins not defined - CAN communication disabled");
-    #endif
-
-    // ============================================================================
-    // SENSOR INITIALIZATION WITH OPTIONAL DELAY
-    // ============================================================================
-    #if DEBUG_INIT_COUNTDOWN
-    ESP_LOGI(TAG, "Starting sensor initialization in 30 seconds...");
-    ESP_LOGI(TAG, "This delay allows you to see initial system status");
+    ESP_LOGI(TAG, "CAN interface initialized on TX:%d, RX:%d", CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
     
-    for (int i = 30; i > 0; i--) {
-        ESP_LOGI(TAG, "Sensor initialization in %d seconds...", i);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    
-    ESP_LOGI(TAG, "Proceeding with sensor initialization...");
-    #else
-    ESP_LOGI(TAG, "Starting sensor initialization...");
-    #endif
-
     // Initialize encoder system based on board configuration
-    #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
-    ESP_LOGI(TAG, "Encoder config - Type: DUAL_HYBRID, PPR: %d", ENCODER_PPR);
-    ESP_LOGI(TAG, "Encoder pins - PWM: GPIO%d, A: GPIO%d, B: GPIO%d", 
-             ENCODER_PWM_PIN, ENCODER_A_PIN, ENCODER_B_PIN);
-    ESP_LOGI(TAG, "PWM range: %d-%d us", ENCODER_PWM_MIN_US, ENCODER_PWM_MAX_US);
+    ESP_LOGI(TAG, "Initializing encoder system...");
     
-    if (encoder_init()) {
-        ESP_LOGI(TAG, "Dual hybrid encoder system initialized successfully");
-        // Wait a moment for encoder to stabilize
-        vTaskDelay(pdMS_TO_TICKS(100));
-        DEBUG_ENC("Encoder init: Valid=%s, Initial angle=%.2f°", 
-                 encoder_is_valid() ? "YES" : "NO",
-                 encoder_get_angle_deg());
-    } else {
-        ESP_LOGE(TAG, "Failed to initialize dual hybrid encoder system");
-        DEBUG_ENC("Dual hybrid encoder initialization FAILED - check hardware connections");
-        ESP_LOGE(TAG, "Check pins: PWM=GPIO%d, A=GPIO%d, B=GPIO%d", 
-                 ENCODER_PWM_PIN, ENCODER_A_PIN, ENCODER_B_PIN);
-        return;
-    }
-    
-    #elif ENCODER_TYPE == ENCODER_TYPE_SPI_MAGNETIC
+    #if ENCODER_TYPE == ENCODER_TYPE_SPI_MAGNETIC
     ESP_LOGI(TAG, "Encoder config - Type: SPI_MAGNETIC (AS504x series)");
     ESP_LOGI(TAG, "SPI pins - CS: GPIO%d, MISO: GPIO%d, MOSI: GPIO%d, CLK: GPIO%d", 
              ENCODER_SPI_CS_PIN, ENCODER_SPI_MISO_PIN, ENCODER_SPI_MOSI_PIN, ENCODER_SPI_CLK_PIN);
     
     if (encoder_init()) {
         ESP_LOGI(TAG, "SPI magnetic encoder system initialized successfully");
-        // Wait a moment for encoder to stabilize and complete initial reading
         vTaskDelay(pdMS_TO_TICKS(200));
         DEBUG_ENC("SPI Encoder init: Valid=%s, Initial angle=%.2f°", 
-                 encoder_is_valid() ? "YES" : "NO",
-                 encoder_get_angle_deg());
+                 encoder_is_valid() ? "YES" : "NO", encoder_get_angle_deg());
         
-        // Print additional SPI encoder diagnostics
         if (encoder_is_valid()) {
             ESP_LOGI(TAG, "SPI magnetic encoder ready - %s", encoder_get_type_name());
         } else {
@@ -641,10 +567,6 @@ void app_main(void) {
         }
     } else {
         ESP_LOGE(TAG, "Failed to initialize SPI magnetic encoder system");
-        DEBUG_ENC("SPI magnetic encoder initialization FAILED - check hardware connections");
-        ESP_LOGE(TAG, "Check SPI pins: CS=GPIO%d, MISO=GPIO%d, MOSI=GPIO%d, CLK=GPIO%d", 
-                 ENCODER_SPI_CS_PIN, ENCODER_SPI_MISO_PIN, ENCODER_SPI_MOSI_PIN, ENCODER_SPI_CLK_PIN);
-        ESP_LOGE(TAG, "Verify AS504x encoder chip power supply and SPI connections");
         return;
     }
     
@@ -657,12 +579,9 @@ void app_main(void) {
         ESP_LOGI(TAG, "PWM magnetic encoder system initialized successfully");
         vTaskDelay(pdMS_TO_TICKS(100));
         DEBUG_ENC("PWM Encoder init: Valid=%s, Initial angle=%.2f°", 
-                 encoder_is_valid() ? "YES" : "NO",
-                 encoder_get_angle_deg());
+                 encoder_is_valid() ? "YES" : "NO", encoder_get_angle_deg());
     } else {
         ESP_LOGE(TAG, "Failed to initialize PWM magnetic encoder system");
-        DEBUG_ENC("PWM magnetic encoder initialization FAILED - check hardware connections");
-        ESP_LOGE(TAG, "Check PWM pin: GPIO%d", ENCODER_PWM_PIN);
         return;
     }
     
@@ -674,12 +593,9 @@ void app_main(void) {
         ESP_LOGI(TAG, "Quadrature encoder system initialized successfully");
         vTaskDelay(pdMS_TO_TICKS(100));
         DEBUG_ENC("Quadrature Encoder init: Valid=%s, Initial angle=%.2f°", 
-                 encoder_is_valid() ? "YES" : "NO",
-                 encoder_get_angle_deg());
+                 encoder_is_valid() ? "YES" : "NO", encoder_get_angle_deg());
     } else {
         ESP_LOGE(TAG, "Failed to initialize quadrature encoder system");
-        DEBUG_ENC("Quadrature encoder initialization FAILED - check hardware connections");
-        ESP_LOGE(TAG, "Check quadrature pins: A=GPIO%d, B=GPIO%d", ENCODER_A_PIN, ENCODER_B_PIN);
         return;
     }
     
@@ -693,7 +609,6 @@ void app_main(void) {
     
     #else
     ESP_LOGE(TAG, "Unknown encoder type: %d - check board_config.h", ENCODER_TYPE);
-    ESP_LOGE(TAG, "System cannot continue without valid encoder configuration");
     return;
     #endif
 
@@ -710,11 +625,12 @@ void app_main(void) {
     // Create ESP-NOW initialization task with large stack (runs once then deletes itself)
     #if ESP_NOW_TELEMETRY_ENABLE
     ESP_LOGI(TAG, "ESP-NOW telemetry ENABLED - Creating initialization task...");
-    xTaskCreate(espnow_init_task, "espnow_init", 8192, NULL, 3, NULL);  // 8KB stack, priority 3
+    xTaskCreate(espnow_init_task, "espnow_init", 8192, NULL, 3, NULL);
     #else
     ESP_LOGI(TAG, "ESP-NOW telemetry DISABLED in board configuration");
     #endif
     
     ESP_LOGI(TAG, "Initialization complete - System ready");
+    ESP_LOGI(TAG, "Event-driven control: VESC Status 4 triggers position control");
     ESP_LOGI(TAG, "Angle Range: %.1f° to %.1f°", MIN_ANGLE, MAX_ANGLE);
 }
