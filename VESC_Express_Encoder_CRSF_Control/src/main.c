@@ -29,6 +29,7 @@
 #include "esp_timer.h"
 #include "esp_netif.h"
 #include "esp_flash.h"
+#include "esp_random.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
@@ -79,6 +80,30 @@ static bool vesc_config_sent = false;
 
 // Forward declarations
 void wait_for_safe_can_slot(void);
+
+#if DEBUG_ESPNOW_TEST
+// ESP-NOW test function - sends random telemetry data for testing
+void espnow_test_send_random_data(void) {
+    static uint32_t last_test_send = 0;
+    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    
+    // Send test data every 1 second
+    if (current_time - last_test_send > 1000) {
+        // Generate random test data (but keep board name from config)
+        float random_encoder = -180.0f + ((float)esp_random() / UINT32_MAX) * 360.0f;  // Random -180 to +180 degrees
+        float random_crsf_target = -90.0f + ((float)esp_random() / UINT32_MAX) * 180.0f;  // Random -90 to +90 degrees  
+        float random_vesc_target = -5.0f + ((float)esp_random() / UINT32_MAX) * 10.0f;  // Random -5 to +5 revolutions
+        
+        // Update telemetry with random test data (board name still from board_config.h)
+        telemetry_espnow_set_payload_data(BOARD_NAME, random_encoder, random_crsf_target, random_vesc_target);
+        
+        ESP_LOGI(TAG, "[ESPNOW_TEST] Sent random data: %s, Enc:%.1f°, CRSF:%.1f°, VESC:%.3frev", 
+                BOARD_NAME, random_encoder, random_crsf_target, random_vesc_target);
+        
+        last_test_send = current_time;
+    }
+}
+#endif
 
 // VESC configuration update function - sends velocity/acceleration parameters periodically
 void update_vesc_motion_parameters(uint32_t current_time) {
@@ -178,7 +203,9 @@ void update_vesc_position_tracking(float new_position_revs, uint32_t current_tim
 // CRSF control task - handles CRSF data processing and motor control coordination
 // In event-driven mode, this mainly handles non-critical tasks and coordination
 void crsf_control_task(void *pvParameters) {
+    #if DEBUG_CRSF_CHANNELS
     uint32_t last_print = 0;
+    #endif
     uint32_t last_encoder_print = 0;
     
     // Static variables for rate-limited debug messages  
@@ -297,7 +324,7 @@ void crsf_control_task(void *pvParameters) {
             // No connection - apply safety behavior
                 
             // Update ESP-NOW telemetry even during failsafe (with default CRSF target)
-            #if ESP_NOW_TELEMETRY_ENABLE
+            #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
             float encoder_degrees = encoder_get_angle_deg();
             float crsf_target_degrees = (MIN_ANGLE + MAX_ANGLE) / 2.0f; // Center position during failsafe
             float vesc_target_revolutions = 0.0f; // No target during failsafe
@@ -314,6 +341,13 @@ void crsf_control_task(void *pvParameters) {
                 comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
             }
         }
+        
+        // ESP-NOW test function - sends random data when DEBUG_ESPNOW_TEST is enabled
+        #if DEBUG_ESPNOW_TEST
+        #if ESP_NOW_TELEMETRY_ENABLE
+        espnow_test_send_random_data();
+        #endif
+        #endif
         
         vTaskDelay(pdMS_TO_TICKS(CONTROL_TASK_DELAY_MS));
     }
@@ -387,16 +421,18 @@ void main_process_control_logic(void) {
             update_vesc_motion_parameters(current_time);
             
             // Update ESP-NOW telemetry data with current system values
-            #if ESP_NOW_TELEMETRY_ENABLE
+            #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
             telemetry_espnow_set_payload_data(BOARD_NAME, current_position_degrees, crsf_target_degrees, vesc_target_position_revolutions);
             #endif
             
             // Rate limit position control debug messages to every 1 second
             if (current_time - last_position_debug > 1000) {
+                #if DEBUG_POSITION_CONTROL
                 const char* feedback_source = using_encoder_feedback ? "Encoder" : "VESC";
                 DEBUG_POS("CRSF: %.1f°, %s: %.1f°, Error: %.1f°, VESC Target: %.6f rev, Armed=YES", 
                         crsf_target_degrees, feedback_source, current_position_degrees, position_error,
                         vesc_target_position_revolutions);
+                #endif
                 last_position_debug = current_time;
             }
         } else {
@@ -441,16 +477,18 @@ void main_process_control_logic(void) {
             float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
             
             // Update ESP-NOW telemetry data with current system values (even when disarmed)
-            #if ESP_NOW_TELEMETRY_ENABLE
+            #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
             telemetry_espnow_set_payload_data(BOARD_NAME, current_position_degrees, crsf_target_degrees, vesc_target_position_revolutions);
             #endif
             
             // Rate limit position control debug messages to every 1 second
             if (current_time - last_position_debug > 1000) {
+                #if DEBUG_POSITION_CONTROL
                 const char* feedback_source = using_encoder_feedback ? "Encoder" : (current_position_degrees == -999.0f ? "NONE" : "VESC");
                 DEBUG_POS("CRSF: %.1f°, %s: %.1f°, Error: %.1f°, VESC Target: %.6f rev, Armed=NO", 
                         crsf_target_degrees, feedback_source, current_position_degrees, position_error,
                         vesc_target_position_revolutions);
+                #endif
                 last_position_debug = current_time;
             }
         }
@@ -539,13 +577,33 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_LOGI(TAG, "WiFi initialized for ESP-NOW");
+    
+    // Set WiFi channel for ESP-NOW (both devices must use same channel)
+    ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
+    
+    // Wait for WiFi interface to be fully ready
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    ESP_LOGI(TAG, "WiFi initialized for ESP-NOW (Channel 1, Station Mode)");
     #endif
 
     // Initialize CAN interface
     comm_can_start(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
     ESP_LOGI(TAG, "CAN interface initialized on TX:%d, RX:%d", CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM);
     
+    // Debug initialization countdown - allows time for hardware to stabilize before encoder init
+    #if DEBUG_INIT_COUNTDOWN
+    ESP_LOGI(TAG, "=== DEBUG INITIALIZATION COUNTDOWN ENABLED ===");
+    ESP_LOGI(TAG, "Starting 30-second hardware stabilization countdown before encoder initialization...");
+    for (int i = 30; i > 0; i--) {
+        if (i % 5 == 0 || i <= 10) {  // Print every 5 seconds, or every second for last 10
+            ESP_LOGI(TAG, "Countdown: %d seconds remaining...", i);
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));  // Wait 1 second
+    }
+    ESP_LOGI(TAG, "=== COUNTDOWN COMPLETE - INITIALIZING ENCODER ===");
+    #endif
+
     // Initialize encoder system based on board configuration
     ESP_LOGI(TAG, "Initializing encoder system...");
     

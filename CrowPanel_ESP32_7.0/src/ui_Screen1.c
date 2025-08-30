@@ -34,6 +34,34 @@ lv_obj_t * ui_Target4 = NULL;
 lv_obj_t * ui_TargetDeg4 = NULL;
 lv_obj_t * ui_PPM4 = NULL;
 lv_obj_t * ui_PPMOUT4 = NULL;
+lv_obj_t * ui_Name5 = NULL;
+lv_obj_t * ui_Encoder5 = NULL;
+lv_obj_t * ui_PosDeg5 = NULL;
+lv_obj_t * ui_Target5 = NULL;
+lv_obj_t * ui_TargetDeg5 = NULL;
+lv_obj_t * ui_PPM5 = NULL;
+lv_obj_t * ui_PPMOUT5 = NULL;
+lv_obj_t * ui_Name6 = NULL;
+lv_obj_t * ui_Encoder6 = NULL;
+lv_obj_t * ui_PosDeg6 = NULL;
+lv_obj_t * ui_Target6 = NULL;
+lv_obj_t * ui_TargetDeg6 = NULL;
+lv_obj_t * ui_PPM6 = NULL;
+lv_obj_t * ui_PPMOUT6 = NULL;
+lv_obj_t * ui_Name7 = NULL;
+lv_obj_t * ui_Encoder7 = NULL;
+lv_obj_t * ui_PosDeg7 = NULL;
+lv_obj_t * ui_Target7 = NULL;
+lv_obj_t * ui_TargetDeg7 = NULL;
+lv_obj_t * ui_PPM7 = NULL;
+lv_obj_t * ui_PPMOUT7 = NULL;
+lv_obj_t * ui_Name8 = NULL;
+lv_obj_t * ui_Encoder8 = NULL;
+lv_obj_t * ui_PosDeg8 = NULL;
+lv_obj_t * ui_Target8 = NULL;
+lv_obj_t * ui_TargetDeg8 = NULL;
+lv_obj_t * ui_PPM8 = NULL;
+lv_obj_t * ui_PPMOUT8 = NULL;
 // event funtions
 
 // build funtions
@@ -46,8 +74,8 @@ void ui_Screen1_screen_init(void)
     ui_Name1 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Name1, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Name1, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Name1, -306);
-    lv_obj_set_y(ui_Name1, -216);
+    lv_obj_set_x(ui_Name1, -300);
+    lv_obj_set_y(ui_Name1, -220);
     lv_obj_set_align(ui_Name1, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Name1, "Left Shoulder");
     lv_obj_set_style_text_font(ui_Name1, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -56,8 +84,8 @@ void ui_Screen1_screen_init(void)
     ui_Encoder1 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Encoder1, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Encoder1, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Encoder1, -301);
-    lv_obj_set_y(ui_Encoder1, -187);
+    lv_obj_set_x(ui_Encoder1, -300);
+    lv_obj_set_y(ui_Encoder1, -190);
     lv_obj_set_align(ui_Encoder1, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Encoder1, "Encoder Angle");
     lv_obj_set_style_text_font(ui_Encoder1, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -65,7 +93,7 @@ void ui_Screen1_screen_init(void)
     ui_PosDeg1 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PosDeg1, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PosDeg1, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PosDeg1, -299);
+    lv_obj_set_x(ui_PosDeg1, -300);
     lv_obj_set_y(ui_PosDeg1, -160);
     lv_obj_set_align(ui_PosDeg1, LV_ALIGN_CENTER);
     lv_label_set_text(ui_PosDeg1, "0.00");
@@ -74,8 +102,8 @@ void ui_Screen1_screen_init(void)
     ui_Target1 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Target1, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Target1, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Target1, -313);
-    lv_obj_set_y(ui_Target1, -127);
+    lv_obj_set_x(ui_Target1, -300);
+    lv_obj_set_y(ui_Target1, -125);
     lv_obj_set_align(ui_Target1, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Target1, "Target Angle");
     lv_obj_set_style_text_font(ui_Target1, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -83,8 +111,8 @@ void ui_Screen1_screen_init(void)
     ui_TargetDeg1 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_TargetDeg1, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_TargetDeg1, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_TargetDeg1, -299);
-    lv_obj_set_y(ui_TargetDeg1, -99);
+    lv_obj_set_x(ui_TargetDeg1, -300);
+    lv_obj_set_y(ui_TargetDeg1, -94);
     lv_obj_set_align(ui_TargetDeg1, LV_ALIGN_CENTER);
     lv_label_set_text(ui_TargetDeg1, "0.00");
     lv_obj_set_style_text_font(ui_TargetDeg1, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -92,17 +120,17 @@ void ui_Screen1_screen_init(void)
     ui_PPM1 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PPM1, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PPM1, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PPM1, -311);
-    lv_obj_set_y(ui_PPM1, -72);
+    lv_obj_set_x(ui_PPM1, -300);
+    lv_obj_set_y(ui_PPM1, -63);
     lv_obj_set_align(ui_PPM1, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_PPM1, "PPM Output");
+    lv_label_set_text(ui_PPM1, "VESC Revs");
     lv_obj_set_style_text_font(ui_PPM1, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_PPMOUT1 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PPMOUT1, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PPMOUT1, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PPMOUT1, -306);
-    lv_obj_set_y(ui_PPMOUT1, -45);
+    lv_obj_set_x(ui_PPMOUT1, -300);
+    lv_obj_set_y(ui_PPMOUT1, -34);
     lv_obj_set_align(ui_PPMOUT1, LV_ALIGN_CENTER);
     lv_label_set_text(ui_PPMOUT1, "0000");
     lv_obj_set_style_text_font(ui_PPMOUT1, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -111,7 +139,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_width(ui_Name2, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Name2, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_x(ui_Name2, -300);
-    lv_obj_set_y(ui_Name2, -8);
+    lv_obj_set_y(ui_Name2, -4);
     lv_obj_set_align(ui_Name2, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Name2, "Left Upper Arm");
     lv_obj_set_style_text_font(ui_Name2, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -129,7 +157,7 @@ void ui_Screen1_screen_init(void)
     ui_PosDeg2 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PosDeg2, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PosDeg2, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PosDeg2, -301);
+    lv_obj_set_x(ui_PosDeg2, -300);
     lv_obj_set_y(ui_PosDeg2, 50);
     lv_obj_set_align(ui_PosDeg2, LV_ALIGN_CENTER);
     lv_label_set_text(ui_PosDeg2, "0.00");
@@ -138,8 +166,8 @@ void ui_Screen1_screen_init(void)
     ui_Target2 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Target2, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Target2, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Target2, -307);
-    lv_obj_set_y(ui_Target2, 88);
+    lv_obj_set_x(ui_Target2, -300);
+    lv_obj_set_y(ui_Target2, 85);
     lv_obj_set_align(ui_Target2, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Target2, "Target Angle");
     lv_obj_set_style_text_font(ui_Target2, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -148,7 +176,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_width(ui_TargetDeg2, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_TargetDeg2, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_x(ui_TargetDeg2, -300);
-    lv_obj_set_y(ui_TargetDeg2, 119);
+    lv_obj_set_y(ui_TargetDeg2, 120);
     lv_obj_set_align(ui_TargetDeg2, LV_ALIGN_CENTER);
     lv_label_set_text(ui_TargetDeg2, "0.00");
     lv_obj_set_style_text_font(ui_TargetDeg2, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -156,17 +184,17 @@ void ui_Screen1_screen_init(void)
     ui_PPM2 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PPM2, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PPM2, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PPM2, -298);
-    lv_obj_set_y(ui_PPM2, 154);
+    lv_obj_set_x(ui_PPM2, -300);
+    lv_obj_set_y(ui_PPM2, 156);
     lv_obj_set_align(ui_PPM2, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_PPM2, "PPM Output");
+    lv_label_set_text(ui_PPM2, "VESC Revs");
     lv_obj_set_style_text_font(ui_PPM2, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_PPMOUT2 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PPMOUT2, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PPMOUT2, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PPMOUT2, -301);
-    lv_obj_set_y(ui_PPMOUT2, 188);
+    lv_obj_set_x(ui_PPMOUT2, -300);
+    lv_obj_set_y(ui_PPMOUT2, 186);
     lv_obj_set_align(ui_PPMOUT2, LV_ALIGN_CENTER);
     lv_label_set_text(ui_PPMOUT2, "0000");
     lv_obj_set_style_text_font(ui_PPMOUT2, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -174,8 +202,8 @@ void ui_Screen1_screen_init(void)
     ui_Name3 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Name3, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Name3, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Name3, -108);
-    lv_obj_set_y(ui_Name3, -217);
+    lv_obj_set_x(ui_Name3, -100);
+    lv_obj_set_y(ui_Name3, -220);
     lv_obj_set_align(ui_Name3, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Name3, "Left Elbow");
     lv_obj_set_style_text_font(ui_Name3, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -184,8 +212,8 @@ void ui_Screen1_screen_init(void)
     ui_Encoder3 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Encoder3, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Encoder3, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Encoder3, -104);
-    lv_obj_set_y(ui_Encoder3, -186);
+    lv_obj_set_x(ui_Encoder3, -100);
+    lv_obj_set_y(ui_Encoder3, -190);
     lv_obj_set_align(ui_Encoder3, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Encoder3, "Encoder Angle");
     lv_obj_set_style_text_font(ui_Encoder3, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -193,8 +221,8 @@ void ui_Screen1_screen_init(void)
     ui_PosDeg3 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PosDeg3, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PosDeg3, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PosDeg3, -99);
-    lv_obj_set_y(ui_PosDeg3, -161);
+    lv_obj_set_x(ui_PosDeg3, -100);
+    lv_obj_set_y(ui_PosDeg3, -160);
     lv_obj_set_align(ui_PosDeg3, LV_ALIGN_CENTER);
     lv_label_set_text(ui_PosDeg3, "0.00");
     lv_obj_set_style_text_font(ui_PosDeg3, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -202,7 +230,7 @@ void ui_Screen1_screen_init(void)
     ui_Target3 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Target3, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Target3, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Target3, -121);
+    lv_obj_set_x(ui_Target3, -100);
     lv_obj_set_y(ui_Target3, -125);
     lv_obj_set_align(ui_Target3, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Target3, "Target Angle");
@@ -211,8 +239,8 @@ void ui_Screen1_screen_init(void)
     ui_TargetDeg3 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_TargetDeg3, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_TargetDeg3, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_TargetDeg3, -97);
-    lv_obj_set_y(ui_TargetDeg3, -97);
+    lv_obj_set_x(ui_TargetDeg3, -100);
+    lv_obj_set_y(ui_TargetDeg3, -94);
     lv_obj_set_align(ui_TargetDeg3, LV_ALIGN_CENTER);
     lv_label_set_text(ui_TargetDeg3, "0.00");
     lv_obj_set_style_text_font(ui_TargetDeg3, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -220,17 +248,17 @@ void ui_Screen1_screen_init(void)
     ui_PPM3 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PPM3, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PPM3, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PPM3, -111);
-    lv_obj_set_y(ui_PPM3, -67);
+    lv_obj_set_x(ui_PPM3, -100);
+    lv_obj_set_y(ui_PPM3, -63);
     lv_obj_set_align(ui_PPM3, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_PPM3, "PPM Output");
+    lv_label_set_text(ui_PPM3, "VESC Revs");
     lv_obj_set_style_text_font(ui_PPM3, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_PPMOUT3 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PPMOUT3, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PPMOUT3, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PPMOUT3, -103);
-    lv_obj_set_y(ui_PPMOUT3, -40);
+    lv_obj_set_x(ui_PPMOUT3, -100);
+    lv_obj_set_y(ui_PPMOUT3, -34);
     lv_obj_set_align(ui_PPMOUT3, LV_ALIGN_CENTER);
     lv_label_set_text(ui_PPMOUT3, "0000");
     lv_obj_set_style_text_font(ui_PPMOUT3, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -238,8 +266,8 @@ void ui_Screen1_screen_init(void)
     ui_Name4 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Name4, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Name4, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Name4, -105);
-    lv_obj_set_y(ui_Name4, -8);
+    lv_obj_set_x(ui_Name4, -100);
+    lv_obj_set_y(ui_Name4, -4);
     lv_obj_set_align(ui_Name4, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Name4, "Left Claw");
     lv_obj_set_style_text_font(ui_Name4, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -248,8 +276,8 @@ void ui_Screen1_screen_init(void)
     ui_Encoder4 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Encoder4, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Encoder4, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Encoder4, -108);
-    lv_obj_set_y(ui_Encoder4, 21);
+    lv_obj_set_x(ui_Encoder4, -100);
+    lv_obj_set_y(ui_Encoder4, 22);
     lv_obj_set_align(ui_Encoder4, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Encoder4, "Encoder Angle");
     lv_obj_set_style_text_font(ui_Encoder4, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -257,7 +285,7 @@ void ui_Screen1_screen_init(void)
     ui_PosDeg4 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PosDeg4, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PosDeg4, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PosDeg4, -95);
+    lv_obj_set_x(ui_PosDeg4, -100);
     lv_obj_set_y(ui_PosDeg4, 49);
     lv_obj_set_align(ui_PosDeg4, LV_ALIGN_CENTER);
     lv_label_set_text(ui_PosDeg4, "0.00");
@@ -266,7 +294,7 @@ void ui_Screen1_screen_init(void)
     ui_Target4 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_Target4, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Target4, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Target4, -114);
+    lv_obj_set_x(ui_Target4, -100);
     lv_obj_set_y(ui_Target4, 85);
     lv_obj_set_align(ui_Target4, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Target4, "Target Angle");
@@ -275,7 +303,7 @@ void ui_Screen1_screen_init(void)
     ui_TargetDeg4 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_TargetDeg4, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_TargetDeg4, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_TargetDeg4, -94);
+    lv_obj_set_x(ui_TargetDeg4, -100);
     lv_obj_set_y(ui_TargetDeg4, 120);
     lv_obj_set_align(ui_TargetDeg4, LV_ALIGN_CENTER);
     lv_label_set_text(ui_TargetDeg4, "0.00");
@@ -284,10 +312,10 @@ void ui_Screen1_screen_init(void)
     ui_PPM4 = lv_label_create(ui_Screen1);
     lv_obj_set_width(ui_PPM4, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_PPM4, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_PPM4, -97);
+    lv_obj_set_x(ui_PPM4, -100);
     lv_obj_set_y(ui_PPM4, 156);
     lv_obj_set_align(ui_PPM4, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_PPM4, "PPM Output");
+    lv_label_set_text(ui_PPM4, "VESC Revs");
     lv_obj_set_style_text_font(ui_PPM4, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_PPMOUT4 = lv_label_create(ui_Screen1);
@@ -298,6 +326,262 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_align(ui_PPMOUT4, LV_ALIGN_CENTER);
     lv_label_set_text(ui_PPMOUT4, "0000");
     lv_obj_set_style_text_font(ui_PPMOUT4, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_Name5 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Name5, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Name5, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Name5, 100);
+    lv_obj_set_y(ui_Name5, -217);
+    lv_obj_set_align(ui_Name5, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Name5, "Right Shoulder");
+    lv_obj_set_style_text_font(ui_Name5, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_Name5, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_USER_1);
+
+    ui_Encoder5 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Encoder5, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Encoder5, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Encoder5, 100);
+    lv_obj_set_y(ui_Encoder5, -186);
+    lv_obj_set_align(ui_Encoder5, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Encoder5, "Encoder Angle");
+    lv_obj_set_style_text_font(ui_Encoder5, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PosDeg5 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PosDeg5, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PosDeg5, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PosDeg5, 100);
+    lv_obj_set_y(ui_PosDeg5, -156);
+    lv_obj_set_align(ui_PosDeg5, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PosDeg5, "0.00");
+    lv_obj_set_style_text_font(ui_PosDeg5, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_Target5 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Target5, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Target5, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Target5, 100);
+    lv_obj_set_y(ui_Target5, -125);
+    lv_obj_set_align(ui_Target5, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Target5, "Target Angle");
+    lv_obj_set_style_text_font(ui_Target5, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_TargetDeg5 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_TargetDeg5, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_TargetDeg5, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_TargetDeg5, 100);
+    lv_obj_set_y(ui_TargetDeg5, -95);
+    lv_obj_set_align(ui_TargetDeg5, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_TargetDeg5, "0.00");
+    lv_obj_set_style_text_font(ui_TargetDeg5, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PPM5 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PPM5, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PPM5, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PPM5, 100);
+    lv_obj_set_y(ui_PPM5, -65);
+    lv_obj_set_align(ui_PPM5, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PPM5, "VESC Revs");
+    lv_obj_set_style_text_font(ui_PPM5, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PPMOUT5 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PPMOUT5, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PPMOUT5, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PPMOUT5, 100);
+    lv_obj_set_y(ui_PPMOUT5, -36);
+    lv_obj_set_align(ui_PPMOUT5, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PPMOUT5, "0000");
+    lv_obj_set_style_text_font(ui_PPMOUT5, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_Name6 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Name6, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Name6, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Name6, 100);
+    lv_obj_set_y(ui_Name6, -6);
+    lv_obj_set_align(ui_Name6, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Name6, "Right Upper Arm");
+    lv_obj_set_style_text_font(ui_Name6, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_Name6, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_USER_1);
+
+    ui_Encoder6 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Encoder6, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Encoder6, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Encoder6, 100);
+    lv_obj_set_y(ui_Encoder6, 21);
+    lv_obj_set_align(ui_Encoder6, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Encoder6, "Encoder Angle");
+    lv_obj_set_style_text_font(ui_Encoder6, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PosDeg6 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PosDeg6, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PosDeg6, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PosDeg6, 100);
+    lv_obj_set_y(ui_PosDeg6, 51);
+    lv_obj_set_align(ui_PosDeg6, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PosDeg6, "0.00");
+    lv_obj_set_style_text_font(ui_PosDeg6, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_Target6 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Target6, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Target6, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Target6, 100);
+    lv_obj_set_y(ui_Target6, 85);
+    lv_obj_set_align(ui_Target6, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Target6, "Target Angle");
+    lv_obj_set_style_text_font(ui_Target6, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_TargetDeg6 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_TargetDeg6, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_TargetDeg6, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_TargetDeg6, 100);
+    lv_obj_set_y(ui_TargetDeg6, 120);
+    lv_obj_set_align(ui_TargetDeg6, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_TargetDeg6, "0.00");
+    lv_obj_set_style_text_font(ui_TargetDeg6, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PPM6 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PPM6, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PPM6, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PPM6, 100);
+    lv_obj_set_y(ui_PPM6, 156);
+    lv_obj_set_align(ui_PPM6, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PPM6, "VESC Revs");
+    lv_obj_set_style_text_font(ui_PPM6, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PPMOUT6 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PPMOUT6, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PPMOUT6, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PPMOUT6, 100);
+    lv_obj_set_y(ui_PPMOUT6, 186);
+    lv_obj_set_align(ui_PPMOUT6, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PPMOUT6, "0000");
+    lv_obj_set_style_text_font(ui_PPMOUT6, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_Name7 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Name7, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Name7, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Name7, 300);
+    lv_obj_set_y(ui_Name7, -220);
+    lv_obj_set_align(ui_Name7, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Name7, "Right Elbow");
+    lv_obj_set_style_text_font(ui_Name7, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_Name7, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_USER_1);
+
+    ui_Encoder7 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Encoder7, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Encoder7, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Encoder7, 300);
+    lv_obj_set_y(ui_Encoder7, -190);
+    lv_obj_set_align(ui_Encoder7, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Encoder7, "Encoder Angle");
+    lv_obj_set_style_text_font(ui_Encoder7, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PosDeg7 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PosDeg7, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PosDeg7, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PosDeg7, 300);
+    lv_obj_set_y(ui_PosDeg7, -160);
+    lv_obj_set_align(ui_PosDeg7, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PosDeg7, "0.00");
+    lv_obj_set_style_text_font(ui_PosDeg7, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_Target7 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Target7, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Target7, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Target7, 300);
+    lv_obj_set_y(ui_Target7, -125);
+    lv_obj_set_align(ui_Target7, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Target7, "Target Angle");
+    lv_obj_set_style_text_font(ui_Target7, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_TargetDeg7 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_TargetDeg7, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_TargetDeg7, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_TargetDeg7, 300);
+    lv_obj_set_y(ui_TargetDeg7, -94);
+    lv_obj_set_align(ui_TargetDeg7, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_TargetDeg7, "0.00");
+    lv_obj_set_style_text_font(ui_TargetDeg7, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PPM7 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PPM7, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PPM7, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PPM7, 300);
+    lv_obj_set_y(ui_PPM7, -63);
+    lv_obj_set_align(ui_PPM7, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PPM7, "VESC Revs");
+    lv_obj_set_style_text_font(ui_PPM7, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PPMOUT7 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PPMOUT7, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PPMOUT7, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PPMOUT7, 300);
+    lv_obj_set_y(ui_PPMOUT7, -34);
+    lv_obj_set_align(ui_PPMOUT7, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PPMOUT7, "0000");
+    lv_obj_set_style_text_font(ui_PPMOUT7, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_Name8 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Name8, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Name8, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Name8, 300);
+    lv_obj_set_y(ui_Name8, -4);
+    lv_obj_set_align(ui_Name8, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Name8, "Right Claw");
+    lv_obj_set_style_text_font(ui_Name8, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_Name8, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_USER_1);
+
+    ui_Encoder8 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Encoder8, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Encoder8, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Encoder8, 300);
+    lv_obj_set_y(ui_Encoder8, 22);
+    lv_obj_set_align(ui_Encoder8, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Encoder8, "Encoder Angle");
+    lv_obj_set_style_text_font(ui_Encoder8, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PosDeg8 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PosDeg8, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PosDeg8, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PosDeg8, 300);
+    lv_obj_set_y(ui_PosDeg8, 50);
+    lv_obj_set_align(ui_PosDeg8, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PosDeg8, "0.00");
+    lv_obj_set_style_text_font(ui_PosDeg8, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_Target8 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_Target8, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_Target8, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_Target8, 300);
+    lv_obj_set_y(ui_Target8, 85);
+    lv_obj_set_align(ui_Target8, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_Target8, "Target Angle");
+    lv_obj_set_style_text_font(ui_Target8, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_TargetDeg8 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_TargetDeg8, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_TargetDeg8, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_TargetDeg8, 300);
+    lv_obj_set_y(ui_TargetDeg8, 122);
+    lv_obj_set_align(ui_TargetDeg8, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_TargetDeg8, "0.00");
+    lv_obj_set_style_text_font(ui_TargetDeg8, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PPM8 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PPM8, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PPM8, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PPM8, 300);
+    lv_obj_set_y(ui_PPM8, 157);
+    lv_obj_set_align(ui_PPM8, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PPM8, "VESC Revs");
+    lv_obj_set_style_text_font(ui_PPM8, &ui_font_RoboticLegends24, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_PPMOUT8 = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_PPMOUT8, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_PPMOUT8, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_PPMOUT8, 300);
+    lv_obj_set_y(ui_PPMOUT8, 188);
+    lv_obj_set_align(ui_PPMOUT8, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_PPMOUT8, "0000");
+    lv_obj_set_style_text_font(ui_PPMOUT8, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
 
 }
 
@@ -335,5 +619,33 @@ void ui_Screen1_screen_destroy(void)
     ui_TargetDeg4 = NULL;
     ui_PPM4 = NULL;
     ui_PPMOUT4 = NULL;
+    ui_Name5 = NULL;
+    ui_Encoder5 = NULL;
+    ui_PosDeg5 = NULL;
+    ui_Target5 = NULL;
+    ui_TargetDeg5 = NULL;
+    ui_PPM5 = NULL;
+    ui_PPMOUT5 = NULL;
+    ui_Name6 = NULL;
+    ui_Encoder6 = NULL;
+    ui_PosDeg6 = NULL;
+    ui_Target6 = NULL;
+    ui_TargetDeg6 = NULL;
+    ui_PPM6 = NULL;
+    ui_PPMOUT6 = NULL;
+    ui_Name7 = NULL;
+    ui_Encoder7 = NULL;
+    ui_PosDeg7 = NULL;
+    ui_Target7 = NULL;
+    ui_TargetDeg7 = NULL;
+    ui_PPM7 = NULL;
+    ui_PPMOUT7 = NULL;
+    ui_Name8 = NULL;
+    ui_Encoder8 = NULL;
+    ui_PosDeg8 = NULL;
+    ui_Target8 = NULL;
+    ui_TargetDeg8 = NULL;
+    ui_PPM8 = NULL;
+    ui_PPMOUT8 = NULL;
 
 }

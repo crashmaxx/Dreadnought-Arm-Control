@@ -17,9 +17,14 @@
 #include "esp_crc.h"
 #include "comm_espnow.h"
 #include "board_config.h"  // For PEER_MAC_ADDR
+#include "debug_config.h"  // For debug configuration
 
 // Debug configuration for ESP-NOW telemetry - set to 1 to enable, 0 to disable
+#if DEBUG_ESPNOW_TEST
+#define DEBUG_ESPNOW_INTERNAL       1  // ESP-NOW internal debugging (enabled by DEBUG_ESPNOW_TEST)
+#else
 #define DEBUG_ESPNOW_INTERNAL       0  // ESP-NOW internal debugging
+#endif
 
 #if DEBUG_ESPNOW_INTERNAL
 #define DEBUG_ESPNOW_INT(fmt, ...) ESP_LOGI(TAG, "[ESPNOW_INT] " fmt, ##__VA_ARGS__)
@@ -37,7 +42,7 @@
 #endif
 
 #ifndef CONFIG_ESPNOW_SEND_DELAY
-#define CONFIG_ESPNOW_SEND_DELAY 500
+#define CONFIG_ESPNOW_SEND_DELAY 100
 #endif
 
 #ifndef CONFIG_ESPNOW_SEND_LEN
@@ -87,23 +92,6 @@ static telemetry_payload_t s_telemetry_data = {
 };
 
 static void telemetry_espnow_deinit(telemetry_espnow_send_param_t *send_param);
-
-/* WiFi should start before using ESPNOW */
-void telemetry_wifi_init(void)
-{
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
-    ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
-    ESP_ERROR_CHECK( esp_wifi_set_mode(ESPNOW_WIFI_MODE) );
-    ESP_ERROR_CHECK( esp_wifi_start());
-    ESP_ERROR_CHECK( esp_wifi_set_channel(CONFIG_ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE));
-
-#if CONFIG_ESPNOW_ENABLE_LONG_RANGE
-    ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
-#endif
-}
 
 /* ESPNOW sending or receiving callback function is called in WiFi task.
  * Users should not do lengthy operations from this task. Instead, post
@@ -244,16 +232,20 @@ static void telemetry_espnow_task(void *pvParameter)
     bool is_broadcast = false;
     int ret;
 
-    vTaskDelay(2000 / portTICK_PERIOD_MS);  // Reduced from 5000ms to 2000ms
+    // Give WiFi interface time to be fully ready for ESP-NOW
+    vTaskDelay(3000 / portTICK_PERIOD_MS);
     ESP_LOGI(TAG, "ESP-NOW task starting - sending to peer "MACSTR, MAC2STR(s_telemetry_peer_mac));
 
     /* Start sending broadcast ESPNOW data. */
     telemetry_espnow_send_param_t *send_param = (telemetry_espnow_send_param_t *)pvParameter;
     ESP_LOGI(TAG, "Sending first ESP-NOW packet...");
-    if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-        ESP_LOGE(TAG, "Send error");
+    esp_err_t send_result = esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len);
+    if (send_result != ESP_OK) {
+        ESP_LOGE(TAG, "ESP-NOW send failed: %s (%d)", esp_err_to_name(send_result), send_result);
         telemetry_espnow_deinit(send_param);
         vTaskDelete(NULL);
+    } else {
+        ESP_LOGI(TAG, "ESP-NOW packet sent successfully");
     }
 
     while (xQueueReceive(s_telemetry_espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
@@ -312,8 +304,8 @@ static void telemetry_espnow_task(void *pvParameter)
                         memset(peer, 0, sizeof(esp_now_peer_info_t));
                         peer->channel = CONFIG_ESPNOW_CHANNEL;
                         peer->ifidx = ESPNOW_WIFI_IF;
-                        peer->encrypt = true;
-                        memcpy(peer->lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
+                        peer->encrypt = false;  // Changed from true to false for consistency
+                        // Removed LMK key setting since encrypt = false
                         memcpy(peer->peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
                         ESP_ERROR_CHECK( esp_now_add_peer(peer) );
                         free(peer);
@@ -388,8 +380,8 @@ esp_err_t telemetry_espnow_init(void)
     ESP_ERROR_CHECK( esp_now_set_wake_window(CONFIG_ESPNOW_WAKE_WINDOW) );
     ESP_ERROR_CHECK( esp_wifi_connectionless_module_set_wake_interval(CONFIG_ESPNOW_WAKE_INTERVAL) );
 #endif
-    /* Set primary master key. */
-    ESP_ERROR_CHECK( esp_now_set_pmk((uint8_t *)CONFIG_ESPNOW_PMK) );
+    /* Set primary master key - COMMENTED OUT FOR COMPATIBILITY */
+    // ESP_ERROR_CHECK( esp_now_set_pmk((uint8_t *)CONFIG_ESPNOW_PMK) );
 
     /* Add broadcast peer information to peer list. */
     esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));

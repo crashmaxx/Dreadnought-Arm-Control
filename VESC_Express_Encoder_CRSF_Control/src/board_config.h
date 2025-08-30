@@ -4,13 +4,13 @@
 // =============================================================================
 // BOARD SELECTION - Uncomment ONE board type for your specific robot joint
 // =============================================================================
-//#define BOARD_LEFT_CLAW
+#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
 //#define BOARD_LEFT_ELBOW
 //#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
-#define BOARD_LEFT_SHOULDER
+//#define BOARD_LEFT_SHOULDER
 //#define BOARD_RIGHT_SHOULDER
 //#define BOARD_CUSTOM
 
@@ -61,13 +61,13 @@
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 0
+  #define ESP_NOW_TELEMETRY_ENABLE 1
 
 #endif
 
 #ifdef BOARD_RIGHT_CLAW
   #define BOARD_NAME "Right_Claw"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
   #define ENCODER_A_PIN 7
   #define ENCODER_B_PIN 6
   #define ENCODER_PWM_PIN 5
@@ -100,7 +100,7 @@
 
 #ifdef BOARD_LEFT_ELBOW
   #define BOARD_NAME "Left_Elbow"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
   #define ENCODER_A_PIN 7
   #define ENCODER_B_PIN 6
   #define ENCODER_PWM_PIN 5
@@ -133,7 +133,7 @@
 
 #ifdef BOARD_RIGHT_ELBOW
   #define BOARD_NAME "Right_Elbow"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
   #define ENCODER_A_PIN 7
   #define ENCODER_B_PIN 6
   #define ENCODER_PWM_PIN 5
@@ -160,13 +160,13 @@
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 0
+  #define ESP_NOW_TELEMETRY_ENABLE 1
 
 #endif
 
 #ifdef BOARD_LEFT_UPPER
   #define BOARD_NAME "Left_Upper"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for testing
   #define ENCODER_A_PIN 7
   #define ENCODER_B_PIN 6
   #define ENCODER_PWM_PIN 5
@@ -193,13 +193,13 @@
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 0
+  #define ESP_NOW_TELEMETRY_ENABLE 1
 
 #endif
 
 #ifdef BOARD_RIGHT_UPPER
   #define BOARD_NAME "Right_Upper"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
   #define ENCODER_A_PIN 7
   #define ENCODER_B_PIN 6
   #define ENCODER_PWM_PIN 5
@@ -259,7 +259,7 @@
   #define GEAR_RATIO 89.6f  // Motor to joint encoder reduction ratio
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 0
+  #define ESP_NOW_TELEMETRY_ENABLE 1
 
 #endif
 
@@ -299,7 +299,7 @@
 #ifdef BOARD_CUSTOM
   // Custom configuration - modify these values as needed
   #define BOARD_NAME "Custom_Board"
-  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID  // Switch to dual hybrid encoder
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
   #define ENCODER_PWM_PIN 10      // ESP32-S3 compatible GPIO
   #define ENCODER_A_PIN 11        // ESP32-S3 compatible GPIO
   #define ENCODER_B_PIN 12        // ESP32-S3 compatible GPIO
@@ -324,6 +324,9 @@
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 1.0f  // Motor to joint encoder reduction ratio
+  
+  // ESP-NOW telemetry configuration
+  #define ESP_NOW_TELEMETRY_ENABLE 1
   
 #endif
 

@@ -7,6 +7,10 @@
 #include "esp_now.h"
 #include "esp_wifi.h"
 #include "esp_err.h"
+#include "esp_log.h"
+
+// Define ESP-NOW WiFi mode configuration to match main.c
+#define CONFIG_ESPNOW_WIFI_MODE_STATION 1
 
 /* ESPNOW can work in both station and softap mode. It is configured in menuconfig. */
 #if CONFIG_ESPNOW_WIFI_MODE_STATION
@@ -18,6 +22,7 @@
 #endif
 
 #define ESPNOW_QUEUE_SIZE           6
+#define CONFIG_ESPNOW_SEND_DELAY    1000
 
 #define IS_BROADCAST_ADDR(addr) (memcmp(addr, s_telemetry_broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 
@@ -87,7 +92,6 @@ typedef struct {
 
 // Function declarations
 esp_err_t telemetry_espnow_init(void);
-void telemetry_wifi_init(void);
 esp_err_t telemetry_espnow_send_data(const uint8_t *dest_mac, const void *data, size_t data_len);
 void telemetry_espnow_data_prepare(telemetry_espnow_send_param_t *send_param);
 void telemetry_espnow_set_payload_data(const char *board_name, float encoder_degrees, float crsf_target_degrees, float vesc_target_revolutions);

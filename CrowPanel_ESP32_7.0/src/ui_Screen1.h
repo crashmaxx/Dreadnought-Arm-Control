@@ -42,6 +42,34 @@ extern lv_obj_t * ui_Target4;
 extern lv_obj_t * ui_TargetDeg4;
 extern lv_obj_t * ui_PPM4;
 extern lv_obj_t * ui_PPMOUT4;
+extern lv_obj_t * ui_Name5;
+extern lv_obj_t * ui_Encoder5;
+extern lv_obj_t * ui_PosDeg5;
+extern lv_obj_t * ui_Target5;
+extern lv_obj_t * ui_TargetDeg5;
+extern lv_obj_t * ui_PPM5;
+extern lv_obj_t * ui_PPMOUT5;
+extern lv_obj_t * ui_Name6;
+extern lv_obj_t * ui_Encoder6;
+extern lv_obj_t * ui_PosDeg6;
+extern lv_obj_t * ui_Target6;
+extern lv_obj_t * ui_TargetDeg6;
+extern lv_obj_t * ui_PPM6;
+extern lv_obj_t * ui_PPMOUT6;
+extern lv_obj_t * ui_Name7;
+extern lv_obj_t * ui_Encoder7;
+extern lv_obj_t * ui_PosDeg7;
+extern lv_obj_t * ui_Target7;
+extern lv_obj_t * ui_TargetDeg7;
+extern lv_obj_t * ui_PPM7;
+extern lv_obj_t * ui_PPMOUT7;
+extern lv_obj_t * ui_Name8;
+extern lv_obj_t * ui_Encoder8;
+extern lv_obj_t * ui_PosDeg8;
+extern lv_obj_t * ui_Target8;
+extern lv_obj_t * ui_TargetDeg8;
+extern lv_obj_t * ui_PPM8;
+extern lv_obj_t * ui_PPMOUT8;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus
