@@ -54,8 +54,21 @@ static const char *TAG = "VESC_Express";
 #include "comm/comm_espnow.h"
 #endif
 
-// Flash storage for configuration backup
-volatile backup_data backup;
+// Global backup variable (required by comm_can.c)
+volatile backup_data backup = {
+    .controller_id_init_flag = VAR_INIT_CODE,
+    .controller_id = CAN_ESP32_ID,  // ESP32's own CAN ID
+    .can_baud_rate_init_flag = VAR_INIT_CODE,
+    .can_baud_rate = CAN_BAUD_500K,
+    .config_init_flag = VAR_INIT_CODE,
+    .config = {
+        .controller_id = CAN_ESP32_ID,  // ESP32's own CAN ID
+        .can_baud_rate = CAN_BAUD_500K,
+        .can_status_rate_hz = 50,  // 50Hz status rate
+        .wifi_mode = WIFI_MODE_DISABLED,
+        .ble_mode = BLE_MODE_DISABLED
+    }
+};
 
 // Global CRSF data
 uint16_t channels[16] = {0}; // CRSF channel data (1000-2000 scaled)
@@ -210,6 +223,11 @@ void crsf_control_task(void *pvParameters) {
     
     // Static variables for rate-limited debug messages  
     uint32_t last_vesc_debug = 0;  // Rate limit VESC debug messages
+    
+    // Failsafe state tracking
+    static bool was_connected = false;
+    static bool failsafe_command_sent = false;
+    static uint32_t last_failsafe_command = 0;
 
     ESP_LOGI(TAG, "CRSF control task started");
 
@@ -275,6 +293,13 @@ void crsf_control_task(void *pvParameters) {
         
         // Check for new CRSF data
         if (crsf_has_new_data()) {
+            // Reset failsafe command state when connection is restored
+            if (!was_connected) {
+                // Connection restored - reset failsafe state for next time
+                failsafe_command_sent = false;
+                was_connected = true;
+            }
+            
             // Get all channel values (scaled to 1000-2000)
             crsf_get_all_channels_scaled(channels);
             
@@ -322,6 +347,11 @@ void crsf_control_task(void *pvParameters) {
             
         } else {
             // No connection - apply safety behavior
+            if (was_connected) {
+                // Just lost connection - reset failsafe state to send command immediately
+                failsafe_command_sent = false;
+                was_connected = false;
+            }
                 
             // Update ESP-NOW telemetry even during failsafe (with default CRSF target)
             #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
@@ -330,15 +360,50 @@ void crsf_control_task(void *pvParameters) {
             float vesc_target_revolutions = 0.0f; // No target during failsafe
             telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
             #endif
-                
-            if (CRSF_FAILSAFE_ENABLE_BRAKE) {
-                wait_for_safe_can_slot();
-                DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT_BRAKE) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT_BRAKE, CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-                comm_can_set_current_brake(CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-            } else {
-                wait_for_safe_can_slot();
-                DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
-                comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
+            
+            // Apply failsafe brake/current command only periodically, not every loop
+            // Send failsafe command immediately when entering failsafe, then every 1 second as keepalive
+            if (!failsafe_command_sent || (current_time - last_failsafe_command > 1000)) {
+                if (CRSF_FAILSAFE_ENABLE_BRAKE) {
+                    wait_for_safe_can_slot();
+                    DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT_BRAKE) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT_BRAKE, CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
+                    comm_can_set_current_brake(CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
+                } else {
+                    wait_for_safe_can_slot();
+                    DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
+                    comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
+                }
+                last_failsafe_command = current_time;
+                failsafe_command_sent = true;
+            }
+        }
+        
+        // Periodic CAN status request to ensure VESC keeps sending STATUS_4 messages
+        // This is critical when VESC isn't actively running motor control
+        static uint32_t last_status_request = 0;
+        if (current_time - last_status_request > 5000) { // Send request every 5 seconds (like backup)
+            wait_for_safe_can_slot();
+            
+            // Method 1: CAN ping to verify communication
+            HW_TYPE hw_type;
+            bool ping_success = comm_can_ping(CAN_VESC_ID, &hw_type);
+            
+            // Method 2: Send COMM_GET_VALUES request to trigger status response
+            // This is the standard VESC command to request all current values
+            uint8_t get_values_cmd = 4; // COMM_GET_VALUES
+            comm_can_send_buffer(CAN_VESC_ID, &get_values_cmd, 1, 0);
+            
+            // Method 3: Send a minimal duty cycle command as backup
+            comm_can_set_duty(CAN_VESC_ID, 0.0f);  // 0% duty = no motor movement
+            
+            last_status_request = current_time;
+            
+            // Debug: Rate limit request debug messages to every 2 seconds
+            static uint32_t last_request_debug = 0;
+            if (current_time - last_request_debug > 2000) {
+                DEBUG_CAN_CMD("Periodic CAN requests to VESC_ID=%d (ping: %s, GET_VALUES sent, duty: 0%%)", 
+                             CAN_VESC_ID, ping_success ? "OK" : "FAIL");
+                last_request_debug = current_time;
             }
         }
         
@@ -355,6 +420,9 @@ void crsf_control_task(void *pvParameters) {
 
 // Control function called from CAN Status 4 callback - executes position control logic
 // This ensures control calculations are synchronized with fresh VESC position data
+// NOTE: This function only runs when STATUS_4 messages are received from the VESC.
+// The crsf_control_task includes periodic ping to ensure STATUS_4 messages continue
+// even when the VESC isn't actively running motor control.
 void main_process_control_logic(void) {
     uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
     static uint32_t last_can_cmd_debug = 0;
@@ -512,7 +580,7 @@ uint32_t main_calc_hw_crc(void) {
 }
 
 void main_store_backup_data(void) {
-    // Implementation for storing backup data to flash
+    // Backup data is statically initialized, no need to store
 }
 
 bool main_init_done(void) {
@@ -567,6 +635,8 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
     ESP_LOGI(TAG, "NVS Flash initialized");
+    ESP_LOGI(TAG, "Backup config initialized - ESP32 CAN ID: %d, Target VESC ID: %d", 
+             CAN_ESP32_ID, CAN_VESC_ID);
 
     // Initialize WiFi/networking if needed by ESP-NOW
     #if ESP_NOW_TELEMETRY_ENABLE
@@ -689,6 +759,6 @@ void app_main(void) {
     #endif
     
     ESP_LOGI(TAG, "Initialization complete - System ready");
-    ESP_LOGI(TAG, "Event-driven control: VESC Status 4 triggers position control");
+    ESP_LOGI(TAG, "Hybrid control: Periodic ping + Event-driven VESC Status 4 position control");
     ESP_LOGI(TAG, "Angle Range: %.1f° to %.1f°", MIN_ANGLE, MAX_ANGLE);
 }
