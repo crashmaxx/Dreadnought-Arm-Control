@@ -39,6 +39,12 @@ static float velocity_deg_s = 0.0f;
 static uint32_t last_update_time_us = 0;
 static uint32_t error_count = 0;
 
+// Multi-turn tracking variables
+static float raw_angle_deg = 0.0f;      // Raw 0-360° reading from encoder
+static float multi_turn_angle_deg = 0.0f;  // Accumulated multi-turn angle
+static int32_t turn_count = 0;           // Number of complete rotations
+static bool first_reading = true;       // Flag for first valid reading
+
 // Function implementations
 static bool spi_encoder_update_impl(void);  // Forward declaration
 
@@ -137,12 +143,12 @@ static bool spi_encoder_update_impl(void) {
     // Get angle data directly - this is what actually matters
     float new_angle_deg = enc_as504x_read_angle(&spi_encoder_config);
     
-    // Debug: Log the raw angle reading periodically
+    // Debug: Log the raw angle reading periodically and multi-turn info
     static uint32_t debug_counter = 0;
     debug_counter++;
     if (debug_counter % 20 == 1) {  // Log every 20th reading
-        DEBUG_VERBOSE_LOG(TAG, "AS504x raw angle reading: %.2f°, SPI val: 0x%04X", 
-                         new_angle_deg, spi_encoder_config.state.spi_val);
+        DEBUG_VERBOSE_LOG(TAG, "AS504x: raw=%.1f° turns=%ld multi=%.1f° SPI=0x%04X", 
+                         raw_angle_deg, turn_count, multi_turn_angle_deg, spi_encoder_config.state.spi_val);
     }
     
     // Check if we got valid angle data
@@ -164,9 +170,37 @@ static bool spi_encoder_update_impl(void) {
     if (!isnan(new_angle_deg) && !isinf(new_angle_deg) && new_angle_deg >= 0.0f && new_angle_deg <= 360.0f) {
         // We have valid angle data - the encoder is working!
         
-        // Process the valid angle data
-        // Normalize angle to 0-360 degrees (should already be normalized)
-        new_angle_deg = encoder_normalize_angle_deg(new_angle_deg);
+        // Store the raw single-turn angle (0-360°)
+        raw_angle_deg = encoder_normalize_angle_deg(new_angle_deg);
+        
+        // Multi-turn tracking logic
+        if (first_reading) {
+            // Initialize multi-turn tracking on first valid reading
+            multi_turn_angle_deg = raw_angle_deg;
+            turn_count = 0;
+            first_reading = false;
+            DEBUG_VERBOSE_LOG(TAG, "Multi-turn tracking initialized at %.2f°", raw_angle_deg);
+        } else {
+            // Detect wraparound crossings
+            float angle_diff = raw_angle_deg - (multi_turn_angle_deg - (turn_count * 360.0f));
+            
+            // Check for forward crossing (359° -> 0°)
+            if (angle_diff < -270.0f) {
+                turn_count++;
+                DEBUG_VERBOSE_LOG(TAG, "Forward turn detected: %d turns, raw=%.2f°", turn_count, raw_angle_deg);
+            }
+            // Check for reverse crossing (0° -> 359°)
+            else if (angle_diff > 270.0f) {
+                turn_count--;
+                DEBUG_VERBOSE_LOG(TAG, "Reverse turn detected: %d turns, raw=%.2f°", turn_count, raw_angle_deg);
+            }
+            
+            // Calculate multi-turn angle
+            multi_turn_angle_deg = raw_angle_deg + (turn_count * 360.0f);
+        }
+        
+        // Use multi-turn angle for calculations
+        new_angle_deg = multi_turn_angle_deg;
         
     } else {
         // Invalid angle data
@@ -179,7 +213,7 @@ static bool spi_encoder_update_impl(void) {
     
     // If we get here, we have valid angle data and a "connected" sensor
     
-    // Calculate velocity
+    // Calculate velocity using multi-turn angles
     uint32_t current_time_us = esp_timer_get_time();
     uint32_t dt_us = current_time_us - last_update_time_us;
     
@@ -187,15 +221,12 @@ static bool spi_encoder_update_impl(void) {
         float dt_s = dt_us / 1000000.0f;
         float angle_diff = new_angle_deg - last_angle_deg;
         
-        // Handle angle wraparound
-        if (angle_diff > 180.0f) {
-            angle_diff -= 360.0f;
-        } else if (angle_diff < -180.0f) {
-            angle_diff += 360.0f;
-        }
+        // No need to handle wraparound with multi-turn angles
+        // Simple velocity calculation with low-pass filtering
+        float inst_velocity = angle_diff / dt_s;
         
-        // Simple velocity calculation (could be improved with filtering)
-        velocity_deg_s = angle_diff / dt_s;
+        // Apply simple low-pass filter to velocity (alpha = 0.2)
+        velocity_deg_s = 0.2f * inst_velocity + 0.8f * velocity_deg_s;
         
         // Limit velocity to reasonable range to filter noise
         if (fabsf(velocity_deg_s) > 36000.0f) {  // 100 rev/s limit
@@ -274,6 +305,35 @@ static const char* spi_encoder_get_type_name_impl(void) {
     return "SPI_MAGNETIC_AS504x";
 }
 
+// Set zero position for multi-turn tracking
+static bool spi_encoder_set_zero_position_impl(float target_angle_deg) {
+    if (!spi_encoder_initialized) {
+        ESP_LOGW(TAG, "Cannot set zero position - encoder not initialized");
+        return false;
+    }
+    
+    // Update to get current raw angle
+    if (!spi_encoder_update_impl()) {
+        ESP_LOGW(TAG, "Cannot set zero position - encoder update failed");
+        return false;
+    }
+    
+    // Calculate new turn count to achieve target angle
+    // target_angle = raw_angle + (turn_count * 360)
+    // turn_count = (target_angle - raw_angle) / 360
+    float turn_offset = (target_angle_deg - raw_angle_deg) / 360.0f;
+    turn_count = (int32_t)roundf(turn_offset);
+    
+    // Recalculate multi-turn angle with new turn count
+    multi_turn_angle_deg = raw_angle_deg + (turn_count * 360.0f);
+    last_angle_deg = multi_turn_angle_deg;
+    
+    ESP_LOGI(TAG, "Zero position set: target=%.2f°, raw=%.2f°, turns=%ld, multi-turn=%.2f°", 
+             target_angle_deg, raw_angle_deg, turn_count, multi_turn_angle_deg);
+    
+    return true;
+}
+
 // SPI encoder interface definition
 const encoder_interface_t spi_encoder_interface = {
     .init = spi_encoder_init_impl,
@@ -285,6 +345,7 @@ const encoder_interface_t spi_encoder_interface = {
     .is_valid = spi_encoder_is_valid_impl,
     .get_error_count = spi_encoder_get_error_count_impl,
     .reset_errors = spi_encoder_reset_errors_impl,
+    .set_zero_position = spi_encoder_set_zero_position_impl,
     .get_type_name = spi_encoder_get_type_name_impl
 };
 
