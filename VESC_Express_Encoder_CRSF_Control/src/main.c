@@ -275,6 +275,7 @@ void crsf_control_task(void *pvParameters) {
         
         // Debug encoder status periodically
         if (current_time - last_encoder_print > 500) { // Every 500ms
+            encoder_update();  // Update encoder data before reading
             if (encoder_is_valid()) {
                 #if DEBUG_ENCODER_DATA
                 float angle = encoder_get_angle_deg();
@@ -355,6 +356,7 @@ void crsf_control_task(void *pvParameters) {
                 
             // Update ESP-NOW telemetry even during failsafe (with default CRSF target)
             #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
+            encoder_update();  // Update encoder data before reading
             float encoder_degrees = encoder_get_angle_deg();
             float crsf_target_degrees = (MIN_ANGLE + MAX_ANGLE) / 2.0f; // Center position during failsafe
             float vesc_target_revolutions = 0.0f; // No target during failsafe
@@ -445,6 +447,9 @@ void main_process_control_logic(void) {
             
             // Get current position feedback - use encoder if valid, otherwise VESC fallback
             float current_position_degrees;
+            // Update encoder data first
+            encoder_update();
+            
             bool using_encoder_feedback = encoder_is_valid();
             
             if (using_encoder_feedback) {
@@ -522,6 +527,9 @@ void main_process_control_logic(void) {
             float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
             float angle_range = MAX_ANGLE - MIN_ANGLE;
             float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
+            
+            // Update encoder data first
+            encoder_update();
             
             // Get current position feedback - use encoder if valid, otherwise VESC fallback  
             float current_position_degrees;
@@ -685,6 +693,7 @@ void app_main(void) {
     if (encoder_init()) {
         ESP_LOGI(TAG, "SPI magnetic encoder system initialized successfully");
         vTaskDelay(pdMS_TO_TICKS(200));
+        encoder_update();  // Update encoder data before reading
         DEBUG_ENC("SPI Encoder init: Valid=%s, Initial angle=%.2f°", 
                  encoder_is_valid() ? "YES" : "NO", encoder_get_angle_deg());
         
@@ -706,6 +715,7 @@ void app_main(void) {
     if (encoder_init()) {
         ESP_LOGI(TAG, "PWM magnetic encoder system initialized successfully");
         vTaskDelay(pdMS_TO_TICKS(100));
+        encoder_update();  // Update encoder data before reading
         DEBUG_ENC("PWM Encoder init: Valid=%s, Initial angle=%.2f°", 
                  encoder_is_valid() ? "YES" : "NO", encoder_get_angle_deg());
     } else {
@@ -720,6 +730,7 @@ void app_main(void) {
     if (encoder_init()) {
         ESP_LOGI(TAG, "Quadrature encoder system initialized successfully");
         vTaskDelay(pdMS_TO_TICKS(100));
+        encoder_update();  // Update encoder data before reading
         DEBUG_ENC("Quadrature Encoder init: Valid=%s, Initial angle=%.2f°", 
                  encoder_is_valid() ? "YES" : "NO", encoder_get_angle_deg());
     } else {

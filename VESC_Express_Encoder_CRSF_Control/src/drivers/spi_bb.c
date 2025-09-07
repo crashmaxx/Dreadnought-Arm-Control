@@ -21,6 +21,7 @@
 #include "soc/gpio_struct.h"
 #include "driver/gpio.h"
 #include "utils.h"
+#include "board_config.h"  // For ENCODER_SPI_MOSI_ALWAYS_HIGH
 
 // Software SPI
 
@@ -44,6 +45,11 @@ void spi_bb_init(spi_bb_state *s) {
 	if (s->mosi_pin >= 0) {
 		gpio_reset_pin(s->mosi_pin);
 		gpio_set_direction(s->mosi_pin, GPIO_MODE_INPUT_OUTPUT);
+		
+#if ENCODER_SPI_MOSI_ALWAYS_HIGH
+		// Set MOSI high and keep it there
+		SET_PIN(s->mosi_pin);
+#endif
 	}
 }
 
@@ -75,8 +81,12 @@ void spi_bb_transfer_8(
 
 		for (int bit = 0; bit < 8; bit++) {
 			if(s->mosi_pin >= 0) {
+#if ENCODER_SPI_MOSI_ALWAYS_HIGH
+				// MOSI is already set high, don't change it
+#else
 				WRITE_PIN(s->mosi_pin, send >> 7);
 				send <<= 1;
+#endif
 			}
 
 			SET_PIN(s->sck_pin);
@@ -122,8 +132,12 @@ void spi_bb_transfer_16(
 
 		for (int bit = 0; bit < 16; bit++) {
 			if(s->mosi_pin >= 0) {
-				WRITE_PIN(s->mosi_pin, send >> 7);
+#if ENCODER_SPI_MOSI_ALWAYS_HIGH
+				// MOSI is already set high, don't change it
+#else
+				WRITE_PIN(s->mosi_pin, send >> 15);  // Fixed: use bit 15 for 16-bit data
 				send <<= 1;
+#endif
 			}
 
 			SET_PIN(s->sck_pin);

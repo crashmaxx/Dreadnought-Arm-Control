@@ -164,16 +164,6 @@ static bool spi_encoder_update_impl(void) {
     if (!isnan(new_angle_deg) && !isinf(new_angle_deg) && new_angle_deg >= 0.0f && new_angle_deg <= 360.0f) {
         // We have valid angle data - the encoder is working!
         
-        // Force connection status if we're getting good position data
-        if (!AS504x_IS_CONNECTED(&spi_encoder_config)) {
-            // Only log occasionally
-            if (error_count % 100 == 1) {
-                DEBUG_VERBOSE_LOG(TAG, "AS504x providing valid angle data (%.2f°) - overriding connection status", new_angle_deg);
-            }
-            // Override the connection detection - position reading is what matters
-            spi_encoder_config.state.sensor_diag.is_connected = 1;
-        }
-        
         // Process the valid angle data
         // Normalize angle to 0-360 degrees (should already be normalized)
         new_angle_deg = encoder_normalize_angle_deg(new_angle_deg);
@@ -257,6 +247,16 @@ static bool spi_encoder_is_valid_impl(void) {
     
     // Check for sensor diagnostic issues
     bool comp_ok = !AS504x_IS_COMP_HIGH(&spi_encoder_config) && !AS504x_IS_COMP_LOW(&spi_encoder_config);
+    
+    // Debug validation failures periodically
+    static uint32_t debug_count = 0;
+    debug_count++;
+    if (debug_count % 100 == 1) {
+        ESP_LOGW(TAG, "Validation check: connected=%d, recent_update=%d, comp_ok=%d, angle=%.2f°", 
+                 connected, recent_update, comp_ok, last_angle_deg);
+        ESP_LOGW(TAG, "Time since last update: %lu us, error_count=%lu", 
+                 current_time_us - last_update_time_us, error_count);
+    }
     
     return connected && recent_update && comp_ok;
 }

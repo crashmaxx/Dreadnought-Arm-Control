@@ -44,10 +44,12 @@ static const char* TAG = "AS504x";
 
 #define AS504x_SPI_DIAG_ADR									0x3FFD
 #define AS504x_SPI_MAGN_ADR									0x3FFE
+#define AS504x_SPI_ANGLE_ADR								0x3FFF  // AS5047P angle register
 #define AS504x_SPI_CLEAR_ERROR_ADR							0x0001
 
 #define AS504x_SPI_READ_DIAG_MSG							(AS504x_SPI_DIAG_ADR | AS504x_SPI_READ_BIT)
 #define AS504x_SPI_READ_MAGN_MSG							(AS504x_SPI_MAGN_ADR | AS504x_SPI_READ_BIT)
+#define AS504x_SPI_READ_ANGLE_MSG							(AS504x_SPI_ANGLE_ADR | AS504x_SPI_READ_BIT)
 #define AS504x_SPI_READ_CLEAR_ERROR_MSG						(AS504x_SPI_CLEAR_ERROR_ADR | AS504x_SPI_READ_BIT)
 
 #define AS504x_CONNECTION_DETERMINATOR_ERROR_THRESHOLD		5
@@ -86,8 +88,8 @@ void enc_as504x_routine(AS504x_config_t *cfg) {
 	}
 	cfg->state.last_update_time = xTaskGetTickCount();
 
-	// if MOSI is defined, use diagnostics
-	if (cfg->sw_spi.mosi_pin >= 0) {
+	// if MOSI is defined and not set to always high, use diagnostics
+	if (cfg->sw_spi.mosi_pin >= 0 && !ENCODER_SPI_MOSI_ALWAYS_HIGH) {
 		spi_bb_begin(&(cfg->sw_spi));
 		spi_bb_transfer_16(&(cfg->sw_spi), 0, 0, 1);
 		spi_bb_end(&(cfg->sw_spi));
@@ -130,6 +132,15 @@ void enc_as504x_routine(AS504x_config_t *cfg) {
 			cfg->state.diag_fetch_now_count = 0;
 		}
 	} else {
+		// MOSI always high mode OR no MOSI - use simple position reading
+		// For AS5047P, send angle read command first, then read response
+		spi_bb_begin(&(cfg->sw_spi));
+		uint16_t angle_cmd = AS504x_SPI_READ_ANGLE_MSG;  // 0x7FFF for AS5047P
+		spi_bb_transfer_16(&(cfg->sw_spi), 0, &angle_cmd, 1);
+		spi_bb_end(&(cfg->sw_spi));
+		
+		long_delay();  // Give AS5047P time to prepare response
+		
 		spi_bb_begin(&(cfg->sw_spi));
 		spi_bb_transfer_16(&(cfg->sw_spi), &pos, 0, 1);
 		spi_bb_end(&(cfg->sw_spi));
@@ -137,9 +148,21 @@ void enc_as504x_routine(AS504x_config_t *cfg) {
 
 		if(0x0000 == pos || 0xFFFF == pos) {
 			cfg->state.data_last_invalid_counter++;
+			// Debug: Log invalid responses periodically
+			static uint32_t invalid_debug_count = 0;
+			invalid_debug_count++;
+			if (invalid_debug_count % 100 == 1) {
+				DEBUG_VERBOSE_LOGW(TAG, "Invalid SPI response: 0x%04X (count: %lu)", pos, cfg->state.data_last_invalid_counter);
+			}
 		} else {
 			cfg->state.data_last_invalid_counter = 0;
 			AS504x_determinate_if_connected(cfg, true);
+			// Debug: Log valid responses occasionally
+			static uint32_t valid_debug_count = 0;
+			valid_debug_count++;
+			if (valid_debug_count % 200 == 1) {
+				DEBUG_VERBOSE_LOG(TAG, "Valid SPI response: 0x%04X", pos);
+			}
 		}
 
 		if (cfg->state.data_last_invalid_counter >= AS504x_DATA_INVALID_THRESHOLD) {
@@ -156,6 +179,14 @@ void enc_as504x_routine(AS504x_config_t *cfg) {
 		pos &= 0x3FFF;
 		cfg->state.last_enc_angle = ((float) pos * 360.0) / 16384.0;
 		UTILS_LP_FAST(cfg->state.spi_error_rate, 0.0, timestep);
+		
+		// Debug: Log successful angle calculation occasionally
+		static uint32_t angle_debug_count = 0;
+		angle_debug_count++;
+		if (angle_debug_count % 100 == 1) {
+			DEBUG_VERBOSE_LOG(TAG, "Angle calculated: raw=0x%04X (0x%04X), angle=%.2f°", 
+			         cfg->state.spi_val, pos, cfg->state.last_enc_angle);
+		}
 	} else {
 		++cfg->state.spi_error_cnt;
 		UTILS_LP_FAST(cfg->state.spi_error_rate, 1.0, timestep);

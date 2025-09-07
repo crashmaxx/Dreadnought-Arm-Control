@@ -6,11 +6,11 @@
 // =============================================================================
 //#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
-#define BOARD_LEFT_ELBOW
+//#define BOARD_LEFT_ELBOW
 //#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
-//#define BOARD_LEFT_SHOULDER
+#define BOARD_LEFT_SHOULDER
 //#define BOARD_RIGHT_SHOULDER
 //#define BOARD_CUSTOM
 
@@ -35,9 +35,10 @@
 #ifdef BOARD_LEFT_CLAW
   #define BOARD_NAME "Left_Claw"
   #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE
-  #define ENCODER_A_PIN 7
-  #define ENCODER_B_PIN 6
-  #define ENCODER_PWM_PIN 5
+  #define ENCODER_A_PIN 7       // CS (Blue)
+  #define ENCODER_B_PIN 6       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 5     // MISO (White)
+  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -67,10 +68,11 @@
 
 #ifdef BOARD_RIGHT_CLAW
   #define BOARD_NAME "Right_Claw"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
-  #define ENCODER_A_PIN 7
-  #define ENCODER_B_PIN 6
-  #define ENCODER_PWM_PIN 5
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
+  #define ENCODER_A_PIN 7       // CS (Blue)
+  #define ENCODER_B_PIN 6       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 5     // MISO (White)
+  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -100,10 +102,11 @@
 
 #ifdef BOARD_LEFT_ELBOW
   #define BOARD_NAME "Left_Elbow"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
-  #define ENCODER_A_PIN 7
-  #define ENCODER_B_PIN 6
-  #define ENCODER_PWM_PIN 5
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
+  #define ENCODER_A_PIN 7       // CS (Blue)
+  #define ENCODER_B_PIN 6       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 5     // MISO (White)
+  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -133,10 +136,11 @@
 
 #ifdef BOARD_RIGHT_ELBOW
   #define BOARD_NAME "Right_Elbow"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
-  #define ENCODER_A_PIN 7
-  #define ENCODER_B_PIN 6
-  #define ENCODER_PWM_PIN 5
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
+  #define ENCODER_A_PIN 7       // CS (Blue)
+  #define ENCODER_B_PIN 6       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 5     // MISO (White)
+  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -166,10 +170,11 @@
 
 #ifdef BOARD_LEFT_UPPER
   #define BOARD_NAME "Left_Upper"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for testing
-  #define ENCODER_A_PIN 7
-  #define ENCODER_B_PIN 6
-  #define ENCODER_PWM_PIN 5
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
+  #define ENCODER_A_PIN 7       // CS (Blue)
+  #define ENCODER_B_PIN 6       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 5     // MISO (White)
+  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -199,10 +204,11 @@
 
 #ifdef BOARD_RIGHT_UPPER
   #define BOARD_NAME "Right_Upper"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID for ESP-NOW compatibility
-  #define ENCODER_A_PIN 7
-  #define ENCODER_B_PIN 6
-  #define ENCODER_PWM_PIN 5
+  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
+  #define ENCODER_A_PIN 7       // CS (Blue)
+  #define ENCODER_B_PIN 6       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 5     // MISO (White)
+  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -235,10 +241,13 @@
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
 
   // SPI pins for magnetic encoder
-  #define ENCODER_SPI_CS_PIN 10    // Chip Select
-  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In
-  #define ENCODER_SPI_CLK_PIN 12   // Clock
-  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out
+  #define ENCODER_SPI_CS_PIN 10    // Chip Select (Green)
+  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In (Red)
+  #define ENCODER_SPI_CLK_PIN 12   // Clock (Blue)
+  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out (Yellow)
+  
+  // SPI MOSI behavior configuration
+  #define ENCODER_SPI_MOSI_ALWAYS_HIGH 0  // 0=normal SPI commands, 1=keep MOSI high
   
   // CAN Configuration
   #define CAN_VESC_ID 0
@@ -268,10 +277,13 @@
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
 
   // SPI pins for magnetic encoder
-  #define ENCODER_SPI_CS_PIN 10    // Chip Select
-  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In
-  #define ENCODER_SPI_CLK_PIN 12   // Clock
-  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out
+  #define ENCODER_SPI_CS_PIN 10    // Chip Select (Green)
+  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In (Red)
+  #define ENCODER_SPI_CLK_PIN 12   // Clock (Blue)
+  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out (Yellow)
+  
+  // SPI MOSI behavior configuration
+  #define ENCODER_SPI_MOSI_ALWAYS_HIGH 0  // 0=normal SPI commands, 1=keep MOSI high
   
   // CAN Configuration
   #define CAN_VESC_ID 0
@@ -390,6 +402,11 @@
 
 #ifndef CAN_ESP32_ID
   #define CAN_ESP32_ID 1
+#endif
+
+// SPI MOSI behavior default
+#ifndef ENCODER_SPI_MOSI_ALWAYS_HIGH
+  #define ENCODER_SPI_MOSI_ALWAYS_HIGH 0  // Default: normal SPI commands
 #endif
 
 
