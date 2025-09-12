@@ -363,18 +363,13 @@ void crsf_control_task(void *pvParameters) {
             telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
             #endif
             
-            // Apply failsafe brake/current command only periodically, not every loop
+            // Apply failsafe current command only periodically, not every loop
             // Send failsafe command immediately when entering failsafe, then every 1 second as keepalive
+            // SAFETY: Always send 0A current (SET_CURRENT) - never use brake commands for failsafe
             if (!failsafe_command_sent || (current_time - last_failsafe_command > 1000)) {
-                if (CRSF_FAILSAFE_ENABLE_BRAKE) {
-                    wait_for_safe_can_slot();
-                    DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT_BRAKE) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT_BRAKE, CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-                    comm_can_set_current_brake(CAN_VESC_ID, CRSF_FAILSAFE_BRAKE_CURRENT);
-                } else {
-                    wait_for_safe_can_slot();
-                    DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAILSAFE]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
-                    comm_can_set_current(CAN_VESC_ID, CRSF_FAILSAFE_CURRENT);
-                }
+                wait_for_safe_can_slot();
+                DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAILSAFE SAFETY]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
+                comm_can_set_current(CAN_VESC_ID, 0.0f);  // Always send 0A for maximum safety
                 last_failsafe_command = current_time;
                 failsafe_command_sent = true;
             }
@@ -430,13 +425,8 @@ void main_process_control_logic(void) {
     static uint32_t last_can_cmd_debug = 0;
     static uint32_t last_position_debug = 0;
     
-    // Only proceed if we have CRSF connection and valid VESC data
-    if (!crsf_is_connected()) {
-        return; // No CRSF connection - nothing to do
-    }
-    
-    // Check if armed using utility function
-    if (crsf_is_armed()) {
+    // Check if armed using utility function (requires CRSF connection)
+    if (crsf_is_connected() && crsf_is_armed()) {
         // Armed mode - send actual motor commands
         if (vesc_position_valid) {
             // Convert CRSF channel to target angle (using board-configured control channel)
@@ -569,13 +559,15 @@ void main_process_control_logic(void) {
             }
         }
         
-        // Disarmed - send zero current
-        // Rate limit CAN command debug to every 2 seconds
-        if (current_time - last_can_cmd_debug > 2000) {
-            DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
-            last_can_cmd_debug = current_time;
+        // Disarmed - send zero current command periodically for safety
+        // Rate limit to every 1 second to avoid flooding CAN bus
+        static uint32_t last_disarmed_command = 0;
+        if (current_time - last_disarmed_command > 1000) {
+            wait_for_safe_can_slot();
+            DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED SAFETY]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
+            comm_can_set_current(CAN_VESC_ID, 0.0f);
+            last_disarmed_command = current_time;
         }
-        comm_can_set_current(CAN_VESC_ID, 0.0f);
     }
 }
 

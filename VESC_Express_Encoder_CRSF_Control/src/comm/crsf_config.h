@@ -54,9 +54,7 @@
 #define CRSF_ARM_CHANNEL_NUM        5               // Physical channel number for arming
 
 // Failsafe Configuration
-#define CRSF_FAILSAFE_CURRENT       0.0f            // Current to send on failsafe
-#define CRSF_FAILSAFE_ENABLE_BRAKE  true            // Enable brake on failsafe
-#define CRSF_FAILSAFE_BRAKE_CURRENT 5.0f            // Brake current on failsafe
+#define CRSF_FAILSAFE_CURRENT       0.0f            // Current to send on failsafe (SAFETY: 0A only)
 #define CRSF_MAX_CURRENT_AMPS       10.0f           // Maximum current limit for safety
 
 // CAN Configuration

@@ -10,8 +10,8 @@
 //#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
-#define BOARD_LEFT_SHOULDER
-//#define BOARD_RIGHT_SHOULDER
+//#define BOARD_LEFT_SHOULDER
+#define BOARD_RIGHT_SHOULDER
 //#define BOARD_CUSTOM
 
 // ================= ENCODER TYPE CONFIGURATION =================
