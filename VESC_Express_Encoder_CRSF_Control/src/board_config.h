@@ -53,10 +53,10 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 4
-  #define REST_ANGLE 18.0f
-  #define MIN_ANGLE 15.0f
-  #define MAX_ANGLE 300.0f
-  #define MAX_VEL 400.0f  // Maximum velocity for position commands
+  #define REST_ANGLE -5.0f
+  #define MIN_ANGLE -300.0f
+  #define MAX_ANGLE 0.0f
+  #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
@@ -90,7 +90,7 @@
   #define REST_ANGLE 18.0f
   #define MIN_ANGLE 0.0f
   #define MAX_ANGLE 359.0f
-  #define MAX_VEL 8400.0f  // Maximum velocity for position commands
+  #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
@@ -121,9 +121,9 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 3
-  #define REST_ANGLE 65.0f
-  #define MIN_ANGLE 55.0f
-  #define MAX_ANGLE 260.0f
+  #define REST_ANGLE 0.0f
+  #define MIN_ANGLE -300.0f
+  #define MAX_ANGLE 115.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -189,9 +189,9 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 2
-  #define REST_ANGLE 65.0f
-  #define MIN_ANGLE 60.0f
-  #define MAX_ANGLE 293.0f
+  #define REST_ANGLE 0.0f
+  #define MIN_ANGLE -30.0f
+  #define MAX_ANGLE 190.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -259,9 +259,9 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
-  #define REST_ANGLE 30.0f
-  #define MIN_ANGLE 0.0f
-  #define MAX_ANGLE 180.0f
+  #define REST_ANGLE 345.0f
+  #define MIN_ANGLE 320.0f
+  #define MAX_ANGLE 420.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -295,9 +295,9 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
-  #define REST_ANGLE 30.0f
-  #define MIN_ANGLE 0.0f
-  #define MAX_ANGLE 180.0f
+  #define REST_ANGLE 95.0f
+  #define MIN_ANGLE 50.0f
+  #define MAX_ANGLE 100.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands

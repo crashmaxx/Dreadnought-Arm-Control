@@ -86,6 +86,8 @@ uint32_t last_vesc_position_update = 0;
 // Channel 6 calibration control
 static bool last_channel6_state = false;  // Previous state of channel 6 (high/low)
 static uint32_t last_calibration_time = 0;
+static float encoder_calibration_offset = 0.0f;  // Offset to make current encoder reading equal to REST_ANGLE
+static bool encoder_calibrated = false;  // Flag to indicate if calibration has been performed
 
 // VESC configuration update tracking
 static uint32_t last_vesc_config_update = 0;
@@ -213,6 +215,21 @@ void update_vesc_position_tracking(float new_position_revs, uint32_t current_tim
     last_vesc_position_update = current_time;
 }
 
+// Get calibrated encoder reading - applies calibration offset if encoder is calibrated
+float get_calibrated_encoder_angle_deg(void) {
+    if (!encoder_is_valid()) {
+        return -999.0f;  // Invalid encoder reading
+    }
+    
+    float raw_angle = encoder_get_angle_deg();
+    
+    if (encoder_calibrated) {
+        return raw_angle + encoder_calibration_offset;
+    } else {
+        return raw_angle;  // Return raw angle if not calibrated yet
+    }
+}
+
 // CRSF control task - handles CRSF data processing and motor control coordination
 // In event-driven mode, this mainly handles non-critical tasks and coordination
 void crsf_control_task(void *pvParameters) {
@@ -226,8 +243,6 @@ void crsf_control_task(void *pvParameters) {
     
     // Failsafe state tracking
     static bool was_connected = false;
-    static bool failsafe_command_sent = false;
-    static uint32_t last_failsafe_command = 0;
 
     ESP_LOGI(TAG, "CRSF control task started");
 
@@ -294,10 +309,9 @@ void crsf_control_task(void *pvParameters) {
         
         // Check for new CRSF data
         if (crsf_has_new_data()) {
-            // Reset failsafe command state when connection is restored
+            // Reset failsafe state when connection is restored
             if (!was_connected) {
-                // Connection restored - reset failsafe state for next time
-                failsafe_command_sent = false;
+                // Connection restored - reset state for next time
                 was_connected = true;
             }
             
@@ -317,27 +331,28 @@ void crsf_control_task(void *pvParameters) {
             #endif
             
             // Channel 6 calibration - sets encoder zero position to REST_ANGLE when activated
-            bool channel6_high = (channels[CRSF_CHANNEL_AUX2] > 1500);  // Channel 6 = AUX2
-            if (channel6_high && !last_channel6_state) {
+            // SAFETY: Only allow calibration when CRSF connected, VESC connected, but system DISARMED
+            bool channel6_high = (channels[CRSF_CHANNEL_AUX2 - 1] > 1500);  // Channel 6 = AUX2, but channels[] is 0-based
+            if (crsf_is_connected() && !crsf_is_armed() && vesc_position_valid && channel6_high && !last_channel6_state) {
                 // Channel 6 transitioned from low to high - trigger calibration
                 // Rate limit calibration to prevent accidental repeated triggers
                 if (current_time - last_calibration_time > 2000) {  // Rate limit to once per 2 seconds
-                    ESP_LOGI(TAG, "[CALIBRATION] Channel 6 triggered - calibrating encoder to %.1f degrees", REST_ANGLE);
+                    ESP_LOGI(TAG, "[CALIBRATION] Channel 6 triggered - calibrating current position to %.1f degrees", REST_ANGLE);
                     
-                    #ifdef ENCODER_TYPE_VESC_INTERNAL
-                    // For VESC internal encoder, use the VESC's native position offset command
-                    // This tells the VESC to adjust its position reference point
-                    wait_for_safe_can_slot();
-                    comm_can_update_pid_pos_offset(CAN_VESC_ID, REST_ANGLE, true);
-                    ESP_LOGI(TAG, "[CALIBRATION] VESC position offset updated to %.1f degrees", REST_ANGLE);
-                    #else
-                    // For external encoders, calibrate the encoder directly
-                    if (encoder_set_zero_position(REST_ANGLE)) {
-                        ESP_LOGI(TAG, "[CALIBRATION] Encoder successfully calibrated to %.1f degrees", REST_ANGLE);
+                    // Update encoder data to get current reading
+                    encoder_update();
+                    
+                    if (encoder_is_valid()) {
+                        // Calculate offset so current encoder reading equals REST_ANGLE
+                        float current_raw_angle = encoder_get_angle_deg();
+                        encoder_calibration_offset = REST_ANGLE - current_raw_angle;
+                        encoder_calibrated = true;
+                        
+                        ESP_LOGI(TAG, "[CALIBRATION] Encoder calibrated: Raw=%.1f°, Offset=%.1f°, Calibrated=%.1f°", 
+                                current_raw_angle, encoder_calibration_offset, REST_ANGLE);
                     } else {
-                        ESP_LOGW(TAG, "[CALIBRATION] Encoder calibration failed");
+                        ESP_LOGW(TAG, "[CALIBRATION] Encoder calibration failed - encoder not valid");
                     }
-                    #endif
                     
                     last_calibration_time = current_time;
                 } else {
@@ -348,60 +363,20 @@ void crsf_control_task(void *pvParameters) {
             
         } else {
             // No connection - apply safety behavior
+            comm_can_set_current(CAN_VESC_ID, 0.0f);  // Send zero current command to ensure motor is not driven
             if (was_connected) {
-                // Just lost connection - reset failsafe state to send command immediately
-                failsafe_command_sent = false;
+                // Just lost connection - reset state to prepare for next time
                 was_connected = false;
             }
                 
             // Update ESP-NOW telemetry even during failsafe (with default CRSF target)
             #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
             encoder_update();  // Update encoder data before reading
-            float encoder_degrees = encoder_get_angle_deg();
-            float crsf_target_degrees = (MIN_ANGLE + MAX_ANGLE) / 2.0f; // Center position during failsafe
-            float vesc_target_revolutions = 0.0f; // No target during failsafe
+            float encoder_degrees = get_calibrated_encoder_angle_deg();
+            float crsf_target_degrees = 0.0f; // Default  value
+            float vesc_target_revolutions = 0.0f; // Default value
             telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
             #endif
-            
-            // Apply failsafe current command only periodically, not every loop
-            // Send failsafe command immediately when entering failsafe, then every 1 second as keepalive
-            // SAFETY: Always send 0A current (SET_CURRENT) - never use brake commands for failsafe
-            if (!failsafe_command_sent || (current_time - last_failsafe_command > 1000)) {
-                wait_for_safe_can_slot();
-                DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [FAILSAFE SAFETY]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
-                comm_can_set_current(CAN_VESC_ID, 0.0f);  // Always send 0A for maximum safety
-                last_failsafe_command = current_time;
-                failsafe_command_sent = true;
-            }
-        }
-        
-        // Periodic CAN status request to ensure VESC keeps sending STATUS_4 messages
-        // This is critical when VESC isn't actively running motor control
-        static uint32_t last_status_request = 0;
-        if (current_time - last_status_request > 5000) { // Send request every 5 seconds (like backup)
-            wait_for_safe_can_slot();
-            
-            // Method 1: CAN ping to verify communication
-            HW_TYPE hw_type;
-            bool ping_success = comm_can_ping(CAN_VESC_ID, &hw_type);
-            
-            // Method 2: Send COMM_GET_VALUES request to trigger status response
-            // This is the standard VESC command to request all current values
-            uint8_t get_values_cmd = 4; // COMM_GET_VALUES
-            comm_can_send_buffer(CAN_VESC_ID, &get_values_cmd, 1, 0);
-            
-            // Method 3: Send a minimal duty cycle command as backup
-            comm_can_set_duty(CAN_VESC_ID, 0.0f);  // 0% duty = no motor movement
-            
-            last_status_request = current_time;
-            
-            // Debug: Rate limit request debug messages to every 2 seconds
-            static uint32_t last_request_debug = 0;
-            if (current_time - last_request_debug > 2000) {
-                DEBUG_CAN_CMD("Periodic CAN requests to VESC_ID=%d (ping: %s, GET_VALUES sent, duty: 0%%)", 
-                             CAN_VESC_ID, ping_success ? "OK" : "FAIL");
-                last_request_debug = current_time;
-            }
         }
         
         // ESP-NOW test function - sends random data when DEBUG_ESPNOW_TEST is enabled
@@ -444,7 +419,7 @@ void main_process_control_logic(void) {
             
             if (using_encoder_feedback) {
                 // Use encoder feedback for closed-loop control
-                current_position_degrees = encoder_get_angle_deg();
+                current_position_degrees = get_calibrated_encoder_angle_deg();
             } else if (is_vesc_tracking_valid(current_time)) {
                 // Use VESC position tracking as fallback
                 current_position_degrees = get_vesc_fallback_position_degrees();
@@ -526,7 +501,7 @@ void main_process_control_logic(void) {
             bool using_encoder_feedback = encoder_is_valid();
             
             if (using_encoder_feedback) {
-                current_position_degrees = encoder_get_angle_deg();
+                current_position_degrees = get_calibrated_encoder_angle_deg();
             } else if (is_vesc_tracking_valid(current_time)) {
                 current_position_degrees = get_vesc_fallback_position_degrees();
             } else {
@@ -559,15 +534,15 @@ void main_process_control_logic(void) {
             }
         }
         
-        // Disarmed - send zero current command periodically for safety
-        // Rate limit to every 1 second to avoid flooding CAN bus
-        static uint32_t last_disarmed_command = 0;
-        if (current_time - last_disarmed_command > 1000) {
-            wait_for_safe_can_slot();
-            DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED SAFETY]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
-            comm_can_set_current(CAN_VESC_ID, 0.0f);
-            last_disarmed_command = current_time;
+        // Disarmed or no connection - send zero current command IMMEDIATELY for safety
+        // Send every time this function is called to ensure it overrides any position commands
+        wait_for_safe_can_slot();
+        static uint32_t last_disarmed_debug = 0;
+        if (current_time - last_disarmed_debug > 2000) { // Debug every 2 seconds, but command every time
+            DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED/NO_CONNECTION SAFETY]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
+            last_disarmed_debug = current_time;
         }
+        comm_can_set_current(CAN_VESC_ID, 0.0f);  // Send 0A current EVERY time for maximum safety
     }
 }
 
