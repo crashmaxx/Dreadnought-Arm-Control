@@ -11,7 +11,8 @@
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
 //#define BOARD_LEFT_SHOULDER
-#define BOARD_RIGHT_SHOULDER
+//#define BOARD_RIGHT_SHOULDER
+#define BOARD_LEFT_SHOULDER_DEMO
 //#define BOARD_CUSTOM
 
 // ================= ENCODER TYPE CONFIGURATION =================
@@ -305,6 +306,48 @@
 
   // ESP-NOW telemetry configuration
   #define ESP_NOW_TELEMETRY_ENABLE 1
+
+#endif
+
+#ifdef BOARD_LEFT_SHOULDER_DEMO
+  #define BOARD_NAME "Left_Shoulder"
+  #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
+
+  // SPI pins for magnetic encoder
+  #define ENCODER_SPI_CS_PIN 10    // Chip Select (Green)
+  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In (Red)
+  #define ENCODER_SPI_CLK_PIN 12   // Clock (Blue)
+  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out (Yellow)
+  
+  // SPI MOSI behavior configuration
+  #define ENCODER_SPI_MOSI_ALWAYS_HIGH 0  // 0=normal SPI commands, 1=keep MOSI high
+  
+  // CAN Configuration
+  #define CAN_VESC_ID 0
+  #define CAN_ESP32_ID 1
+  
+  // CAN bus pins
+  #define CAN_TX_GPIO_NUM 8       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 9       // CAN RX pin for ESP32-S3
+  
+  // Control parameters
+  #define CONTROL_CHANNEL 1
+  #define REST_ANGLE 345.0f
+  #define MIN_ANGLE 320.0f
+  #define MAX_ANGLE 420.0f
+  #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
+  #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
+  #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
+  #define GEAR_RATIO 48.0f  // Motor to joint encoder reduction ratio
+
+  // ESP-NOW telemetry configuration
+  #define ESP_NOW_TELEMETRY_ENABLE 1
+
+  //FRAM configuration I2C pins
+  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
+  #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
 #endif
 

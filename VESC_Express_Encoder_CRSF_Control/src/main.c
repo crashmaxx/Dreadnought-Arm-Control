@@ -42,6 +42,7 @@
 #include "comm/crsf_utils.h"
 #include "comm/comm_can.h"
 #include "drivers/encoder_interface.h"
+#include "drivers/fram_i2c.h"
 #include "datatypes.h"
 #include "board_config.h"
 #include "utils.h"
@@ -88,6 +89,11 @@ static bool last_channel6_state = false;  // Previous state of channel 6 (high/l
 static uint32_t last_calibration_time = 0;
 static float encoder_calibration_offset = 0.0f;  // Offset to make current encoder reading equal to REST_ANGLE
 static bool encoder_calibrated = false;  // Flag to indicate if calibration has been performed
+
+// FRAM storage variables
+static fram_encoder_data_t fram_data = {0};
+static uint32_t last_fram_save = 0;
+static bool fram_initialized = false;
 
 // VESC configuration update tracking
 static uint32_t last_vesc_config_update = 0;
@@ -230,6 +236,71 @@ float get_calibrated_encoder_angle_deg(void) {
     }
 }
 
+// Initialize FRAM and load saved encoder data on startup
+void fram_init_and_load_data(void) {
+    // Initialize FRAM I2C interface
+    esp_err_t ret = fram_i2c_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "FRAM initialization failed: %s", esp_err_to_name(ret));
+        fram_initialized = false;
+        return;
+    }
+
+    fram_initialized = true;
+
+    // Load previously saved encoder data
+    ret = fram_load_encoder_data(&fram_data);
+    if (ret == ESP_OK) {
+        // Restore calibration data if valid
+        if (fram_data.calibrated) {
+            encoder_calibration_offset = fram_data.calibration_offset;
+            encoder_calibrated = fram_data.calibrated;
+            ESP_LOGI(TAG, "FRAM: Restored calibration - Offset:%.2f°, Last angle:%.2f°, Boot count:%lu", 
+                    fram_data.calibration_offset, fram_data.current_angle, fram_data.boot_count);
+        } else {
+            ESP_LOGI(TAG, "FRAM: No previous calibration found");
+        }
+
+        // Increment boot count
+        fram_data.boot_count++;
+        ESP_LOGI(TAG, "FRAM: Boot count incremented to %lu", fram_data.boot_count);
+    } else {
+        ESP_LOGW(TAG, "FRAM: Failed to load data, starting with defaults: %s", esp_err_to_name(ret));
+        // Initialize with default values
+        fram_data.current_angle = 0.0f;
+        fram_data.calibration_offset = 0.0f;
+        fram_data.calibrated = false;
+        fram_data.boot_count = 1;
+        fram_data.last_save_time = 0;
+    }
+}
+
+// Save current encoder state to FRAM (called periodically)
+void fram_save_current_encoder_data(uint32_t current_time) {
+    if (!fram_initialized) {
+        return;
+    }
+
+    // Update current encoder data
+    encoder_update();
+    if (encoder_is_valid()) {
+        fram_data.current_angle = get_calibrated_encoder_angle_deg();
+    }
+    fram_data.calibration_offset = encoder_calibration_offset;
+    fram_data.calibrated = encoder_calibrated;
+    fram_data.last_save_time = current_time;
+
+    // Save to FRAM
+    esp_err_t ret = fram_save_encoder_data(&fram_data);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "FRAM: Failed to save encoder data: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "FRAM: Saved encoder data - Angle:%.2f°, Offset:%.2f°, Calibrated:%s", 
+                fram_data.current_angle, fram_data.calibration_offset, 
+                fram_data.calibrated ? "YES" : "NO");
+    }
+}
+
 // CRSF control task - handles CRSF data processing and motor control coordination
 // In event-driven mode, this mainly handles non-critical tasks and coordination
 void crsf_control_task(void *pvParameters) {
@@ -350,6 +421,14 @@ void crsf_control_task(void *pvParameters) {
                         
                         ESP_LOGI(TAG, "[CALIBRATION] Encoder calibrated: Raw=%.1f°, Offset=%.1f°, Calibrated=%.1f°", 
                                 current_raw_angle, encoder_calibration_offset, REST_ANGLE);
+                        
+                        // Save calibration data to FRAM immediately
+                        #ifdef FRAM_I2C_SDA_PIN
+                        if (fram_initialized) {
+                            fram_save_current_encoder_data(current_time);
+                            ESP_LOGI(TAG, "[CALIBRATION] Calibration data saved to FRAM");
+                        }
+                        #endif
                     } else {
                         ESP_LOGW(TAG, "[CALIBRATION] Encoder calibration failed - encoder not valid");
                     }
@@ -384,6 +463,14 @@ void crsf_control_task(void *pvParameters) {
         #if ESP_NOW_TELEMETRY_ENABLE
         espnow_test_send_random_data();
         #endif
+        #endif
+        
+        // Periodic FRAM saving - save complete encoder data every 60 seconds (angle saved after each CAN frame)
+        #ifdef FRAM_I2C_SDA_PIN
+        if (fram_initialized && (current_time - last_fram_save > 60000)) {  // Save complete data every 60 seconds
+            fram_save_current_encoder_data(current_time);
+            last_fram_save = current_time;
+        }
         #endif
         
         vTaskDelay(pdMS_TO_TICKS(CONTROL_TASK_DELAY_MS));
@@ -454,6 +541,14 @@ void main_process_control_logic(void) {
                 last_can_cmd_debug = current_time;
             }
             comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_target_position_revolutions);
+            
+            // Save current encoder angle to FRAM after each CAN position command
+            #ifdef FRAM_I2C_SDA_PIN
+            if (fram_initialized) {
+                fram_write_float(FRAM_ADDR_ENCODER_ANGLE, current_position_degrees);
+                fram_write_uint32(FRAM_ADDR_TIMESTAMP, current_time);
+            }
+            #endif
             
             // Update VESC motion parameters periodically (after position control)
             update_vesc_motion_parameters(current_time);
@@ -612,6 +707,14 @@ void app_main(void) {
     ESP_LOGI(TAG, "NVS Flash initialized");
     ESP_LOGI(TAG, "Backup config initialized - ESP32 CAN ID: %d, Target VESC ID: %d", 
              CAN_ESP32_ID, CAN_VESC_ID);
+
+    // Initialize FRAM for persistent data storage
+    #ifdef FRAM_I2C_SDA_PIN
+    ESP_LOGI(TAG, "Initializing FRAM for encoder data storage...");
+    fram_init_and_load_data();
+    #else
+    ESP_LOGI(TAG, "FRAM not configured for this board");
+    #endif
 
     // Initialize WiFi/networking if needed by ESP-NOW
     #if ESP_NOW_TELEMETRY_ENABLE
