@@ -46,6 +46,7 @@
 #include "datatypes.h"
 #include "board_config.h"
 #include "utils.h"
+#include <string.h>
 
 // Main task and debug configuration
 static const char *TAG = "VESC_Express";
@@ -53,6 +54,13 @@ static const char *TAG = "VESC_Express";
 // ESP-NOW telemetry configuration
 #if ESP_NOW_TELEMETRY_ENABLE
 #include "comm/comm_espnow.h"
+#endif
+
+// ESP-NOW bidirectional communication includes
+#if ESP_NOW_BIDIRECTIONAL_ENABLE
+#include "esp_now.h"
+#include "esp_wifi.h"
+#include "esp_netif.h"
 #endif
 
 // Global backup variable (required by comm_can.c)
@@ -92,7 +100,9 @@ static bool encoder_calibrated = false;  // Flag to indicate if calibration has 
 
 // FRAM storage variables
 static fram_encoder_data_t fram_data = {0};
+static fram_remote_data_t fram_remote_data = {0};
 static uint32_t last_fram_save = 0;
+static uint32_t last_fram_remote_save = 0;
 static bool fram_initialized = false;
 
 // VESC configuration update tracking
@@ -273,6 +283,27 @@ void fram_init_and_load_data(void) {
         fram_data.boot_count = 1;
         fram_data.last_save_time = 0;
     }
+
+    // Load remote ESP-NOW data
+    #if ESP_NOW_BIDIRECTIONAL_ENABLE
+    ret = fram_load_remote_data(&fram_remote_data);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "FRAM: Loaded remote data - CH2:%.2f°(%s), CH3:%.2f°(%s), RX:%lu, TX:%lu", 
+                fram_remote_data.remote_angle_ch2, fram_remote_data.remote_ch2_valid ? "OK" : "BAD",
+                fram_remote_data.remote_angle_ch3, fram_remote_data.remote_ch3_valid ? "OK" : "BAD",
+                fram_remote_data.packets_received, fram_remote_data.packets_sent);
+    } else {
+        ESP_LOGI(TAG, "FRAM: No previous remote data, initializing defaults");
+        fram_remote_data.remote_angle_ch2 = 0.0f;
+        fram_remote_data.remote_angle_ch3 = 0.0f;
+        fram_remote_data.remote_timestamp = 0;
+        fram_remote_data.remote_ch2_valid = false;
+        fram_remote_data.remote_ch3_valid = false;
+        fram_remote_data.packets_received = 0;
+        fram_remote_data.packets_sent = 0;
+        fram_remote_data.last_communication_time = 0;
+    }
+    #endif
 }
 
 // Save current encoder state to FRAM (called periodically)
@@ -300,6 +331,201 @@ void fram_save_current_encoder_data(uint32_t current_time) {
                 fram_data.calibrated ? "YES" : "NO");
     }
 }
+
+#if ESP_NOW_BIDIRECTIONAL_ENABLE
+// ESP-NOW bidirectional communication data structure
+typedef struct __attribute__((packed)) {
+    char device_role[16];        // Device identifier (e.g., "LEFT_SHOULDER", "LEFT_ARM")
+    uint8_t channel_count;       // Number of channels in this packet (1 for shoulder, 2 for arm)
+    float channel_2;             // CRSF channel 2 angle (shoulder or upper arm)
+    float channel_3;             // CRSF channel 3 angle (elbow)
+    uint8_t armed;               // Arm/disarm status (uint8_t instead of bool for C/C++ compatibility)
+    uint8_t calibrate_command;   // Calibrate command (uint8_t instead of bool for C/C++ compatibility)
+    uint32_t timestamp;          // Timestamp of the measurement
+    uint32_t sequence_number;    // Packet sequence number
+    uint8_t checksum;            // Simple checksum for data integrity
+} espnow_angle_packet_t;
+
+// ESP-NOW receive callback for bidirectional communication
+void espnow_receive_callback(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
+    if (len != sizeof(espnow_angle_packet_t)) {
+        ESP_LOGW(TAG, "ESP-NOW: Received packet wrong size: %d bytes", len);
+        return;
+    }
+
+    espnow_angle_packet_t received_packet;
+    memcpy(&received_packet, data, sizeof(espnow_angle_packet_t));
+
+    // Verify checksum (simple sum of bytes)
+    uint8_t calc_checksum = 0;
+    uint8_t *packet_bytes = (uint8_t*)&received_packet;
+    for (int i = 0; i < sizeof(espnow_angle_packet_t) - 1; i++) {  // Exclude checksum byte
+        calc_checksum += packet_bytes[i];
+    }
+
+    if (calc_checksum != received_packet.checksum) {
+        ESP_LOGW(TAG, "ESP-NOW: Checksum mismatch - packet corrupted");
+        return;
+    }
+
+    // Update remote data using configured channels
+    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    fram_remote_data.remote_timestamp = received_packet.timestamp;
+    fram_remote_data.packets_received++;
+    fram_remote_data.last_communication_time = current_time;
+
+    if (received_packet.channel_count >= 1) {
+        // Upper arm angle (CRSF channel 2)
+        fram_remote_data.remote_angle_ch2 = received_packet.channel_2;
+        fram_remote_data.remote_ch2_valid = true;
+    }
+    
+    if (received_packet.channel_count >= 2) {
+        // Elbow angle (CRSF channel 3)
+        fram_remote_data.remote_angle_ch3 = received_packet.channel_3;
+        fram_remote_data.remote_ch3_valid = true;
+    }
+
+    // Process armed/disarmed and calibrate command status from remote device
+    static bool remote_armed = false;
+    static bool remote_calibrate_command = false;
+    remote_armed = received_packet.armed;
+    remote_calibrate_command = received_packet.calibrate_command;
+
+    ESP_LOGI(TAG, "ESP-NOW RX: %s CH2:%.1f° CH3:%.1f° Armed:%s Cal:%s (seq:%lu, age:%lums)", 
+             received_packet.device_role, 
+             received_packet.channel_count >= 1 ? received_packet.channel_2 : 0.0f,
+             received_packet.channel_count >= 2 ? received_packet.channel_3 : 0.0f,
+             received_packet.armed ? "YES" : "NO",
+             received_packet.calibrate_command ? "YES" : "NO",
+             received_packet.sequence_number, current_time - received_packet.timestamp);
+
+    // Save to FRAM (rate limited)
+    #ifdef FRAM_I2C_SDA_PIN
+    if (fram_initialized && (current_time - last_fram_remote_save > 1000)) {  // Save remote data every 1 second
+        if (received_packet.channel_count >= 1) {
+            // Save upper arm angle (RX channel 0)
+            fram_update_remote_angle(2, fram_remote_data.remote_angle_ch2, fram_remote_data.remote_timestamp);
+        }
+        if (received_packet.channel_count >= 2) {
+            // Save elbow angle (RX channel 1)
+            fram_update_remote_angle(3, fram_remote_data.remote_angle_ch3, fram_remote_data.remote_timestamp);
+        }
+        last_fram_remote_save = current_time;
+    }
+    #endif
+}
+
+// Send CRSF channel data via ESP-NOW to remote arm
+void espnow_send_crsf_channels(uint32_t timestamp) {
+    static uint32_t sequence_number = 0;
+    static bool crsf_initialized = false;
+    
+    // Wait for CRSF to be initialized before sending
+    if (!crsf_initialized) {
+        crsf_initialized = true;  // Set flag after first call
+        return;  // Skip first send to avoid accessing uninitialized CRSF
+    }
+    
+    espnow_angle_packet_t packet;
+    memset(&packet, 0, sizeof(packet));  // Clear packet
+    strncpy(packet.device_role, LOCAL_ESP32_ROLE, sizeof(packet.device_role) - 1);
+    packet.device_role[sizeof(packet.device_role) - 1] = '\0';  // Ensure null termination
+    packet.channel_count = 2;            // Sending 2 channels (upper arm + elbow control)
+    packet.channel_2 = (float)channels[CRSF_CHANNEL_PITCH - 1];    // CRSF channel 2 (Pitch, 1000-2000) -> upper arm
+    packet.channel_3 = (float)channels[CRSF_CHANNEL_THROTTLE - 1]; // CRSF channel 3 (Throttle, 1000-2000) -> elbow
+    packet.armed = crsf_is_armed();      // Channel 5 arm/disarm status
+    packet.calibrate_command = (channels[CRSF_CHANNEL_AUX2 - 1] > 1700);  // Channel 6 calibrate command (high position)
+    packet.timestamp = timestamp;
+    packet.sequence_number = ++sequence_number;
+    
+    // Calculate checksum
+    packet.checksum = 0;
+    uint8_t *packet_bytes = (uint8_t*)&packet;
+    for (int i = 0; i < sizeof(espnow_angle_packet_t) - 1; i++) {  // Exclude checksum byte
+        packet.checksum += packet_bytes[i];
+    }
+
+    // Send via ESP-NOW (using existing telemetry infrastructure)
+    uint8_t remote_mac[] = REMOTE_ESP32_MAC_ADDR;
+    esp_err_t ret = esp_now_send(remote_mac, (uint8_t*)&packet, sizeof(packet));
+    
+    if (ret == ESP_OK) {
+        fram_remote_data.packets_sent++;
+        // Rate limit logging to once per second
+        static uint32_t last_log_time = 0;
+        if ((timestamp - last_log_time) >= 1000) {
+            ESP_LOGI(TAG, "ESP-NOW TX: %s CH2:%.0f CH3:%.0f Armed:%s Cal:%s (seq:%lu)", 
+                     LOCAL_ESP32_ROLE, packet.channel_2, packet.channel_3,
+                     packet.armed ? "YES" : "NO", 
+                     packet.calibrate_command ? "YES" : "NO", sequence_number);
+            last_log_time = timestamp;
+        }
+    } else {
+        ESP_LOGW(TAG, "ESP-NOW TX failed: %s", esp_err_to_name(ret));
+    }
+}
+
+// Initialize bidirectional ESP-NOW communication (independent of telemetry)
+esp_err_t espnow_bidirectional_init(void) {
+    esp_err_t ret;
+    
+    // Initialize WiFi if not already done
+    static bool wifi_initialized = false;
+    if (!wifi_initialized) {
+        ESP_ERROR_CHECK(esp_netif_init());
+        ESP_ERROR_CHECK(esp_event_loop_create_default());
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+        ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+        ESP_ERROR_CHECK(esp_wifi_start());
+        
+        // Set WiFi channel for ESP-NOW (both devices must use same channel)
+        ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
+        
+        // Wait for WiFi interface to be fully ready
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        ESP_LOGI(TAG, "WiFi initialized for bidirectional ESP-NOW (Channel 1, Station Mode)");
+        wifi_initialized = true;
+    }
+    
+    // Initialize ESP-NOW
+    ret = esp_now_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "ESP-NOW init failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Register receive callback
+    ret = esp_now_register_recv_cb(espnow_receive_callback);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "ESP-NOW register receive callback failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Add remote peer
+    esp_now_peer_info_t peer_info = {0};
+    uint8_t remote_mac[] = REMOTE_ESP32_MAC_ADDR;
+    memcpy(peer_info.peer_addr, remote_mac, 6);
+    peer_info.channel = 1;  // Same as WiFi channel
+    peer_info.encrypt = false;
+
+    ret = esp_now_add_peer(&peer_info);
+    if (ret != ESP_OK && ret != ESP_ERR_ESPNOW_EXIST) {
+        ESP_LOGE(TAG, "ESP-NOW add peer failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "ESP-NOW bidirectional communication initialized");
+    ESP_LOGI(TAG, "Local role: %s, Remote MAC: %02X:%02X:%02X:%02X:%02X:%02X", 
+             LOCAL_ESP32_ROLE, remote_mac[0], remote_mac[1], remote_mac[2], 
+             remote_mac[3], remote_mac[4], remote_mac[5]);
+
+    return ESP_OK;
+}
+#endif
 
 // CRSF control task - handles CRSF data processing and motor control coordination
 // In event-driven mode, this mainly handles non-critical tasks and coordination
@@ -403,7 +629,7 @@ void crsf_control_task(void *pvParameters) {
             
             // Channel 6 calibration - sets encoder zero position to REST_ANGLE when activated
             // SAFETY: Only allow calibration when CRSF connected, VESC connected, but system DISARMED
-            bool channel6_high = (channels[CRSF_CHANNEL_AUX2 - 1] > 1500);  // Channel 6 = AUX2, but channels[] is 0-based
+            bool channel6_high = (channels[CRSF_CHANNEL_AUX2 - 1] > 1700);  // Channel 6 = AUX2 (high position)
             if (crsf_is_connected() && !crsf_is_armed() && vesc_position_valid && channel6_high && !last_channel6_state) {
                 // Channel 6 transitioned from low to high - trigger calibration
                 // Rate limit calibration to prevent accidental repeated triggers
@@ -465,10 +691,25 @@ void crsf_control_task(void *pvParameters) {
         #endif
         #endif
         
+        // ESP-NOW bidirectional communication - send CRSF channel data to remote arm
+        #if ESP_NOW_BIDIRECTIONAL_ENABLE
+        static uint32_t last_espnow_send = 0;
+        if (current_time - last_espnow_send > 100) {  // Send every 100ms (10Hz)
+            espnow_send_crsf_channels(current_time);
+            last_espnow_send = current_time;
+        }
+        #endif
+        
         // Periodic FRAM saving - save complete encoder data every 60 seconds (angle saved after each CAN frame)
         #ifdef FRAM_I2C_SDA_PIN
         if (fram_initialized && (current_time - last_fram_save > 60000)) {  // Save complete data every 60 seconds
             fram_save_current_encoder_data(current_time);
+            
+            // Also save remote ESP-NOW data periodically
+            #if ESP_NOW_BIDIRECTIONAL_ENABLE
+            fram_save_remote_data(&fram_remote_data);
+            #endif
+            
             last_fram_save = current_time;
         }
         #endif
@@ -615,6 +856,8 @@ void main_process_control_logic(void) {
             // Update ESP-NOW telemetry data with current system values (even when disarmed)
             #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
             telemetry_espnow_set_payload_data(BOARD_NAME, current_position_degrees, crsf_target_degrees, vesc_target_position_revolutions);
+            #else
+            (void)vesc_target_position_revolutions;  // Prevent unused variable warning
             #endif
             
             // Rate limit position control debug messages to every 1 second
@@ -674,6 +917,9 @@ void espnow_init_task(void *pvParameters) {
         esp_err_t ret = telemetry_espnow_init();
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "ESP-NOW initialized successfully on attempt %d", retry_count + 1);
+            
+
+            
             break;
         } else {
             retry_count++;
@@ -689,6 +935,38 @@ void espnow_init_task(void *pvParameters) {
     }
     
     ESP_LOGI(TAG, "ESP-NOW initialization task completed - deleting self");
+    vTaskDelete(NULL);  // Delete this task
+}
+#endif
+
+// ESP-NOW bidirectional initialization task (runs once then deletes itself)
+#if ESP_NOW_BIDIRECTIONAL_ENABLE
+void espnow_bidirectional_init_task(void *pvParameters) {
+    ESP_LOGI(TAG, "ESP-NOW bidirectional initialization task starting...");
+    
+    // Initialize ESP-NOW bidirectional with retry mechanism
+    int retry_count = 0;
+    const int max_retries = 3;
+    
+    while (retry_count < max_retries) {
+        esp_err_t ret = espnow_bidirectional_init();
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "ESP-NOW bidirectional initialized successfully on attempt %d", retry_count + 1);
+            break;
+        } else {
+            retry_count++;
+            ESP_LOGW(TAG, "ESP-NOW bidirectional init failed (attempt %d/%d): %s", retry_count, max_retries, esp_err_to_name(ret));
+            if (retry_count < max_retries) {
+                vTaskDelay(pdMS_TO_TICKS(1000));  // Wait 1 second before retry
+            }
+        }
+    }
+    
+    if (retry_count >= max_retries) {
+        ESP_LOGE(TAG, "ESP-NOW bidirectional initialization failed after %d attempts - bidirectional communication disabled", max_retries);
+    }
+    
+    ESP_LOGI(TAG, "ESP-NOW bidirectional initialization task completed - deleting self");
     vTaskDelete(NULL);  // Delete this task
 }
 #endif
@@ -837,6 +1115,14 @@ void app_main(void) {
     xTaskCreate(espnow_init_task, "espnow_init", 8192, NULL, 3, NULL);
     #else
     ESP_LOGI(TAG, "ESP-NOW telemetry DISABLED in board configuration");
+    #endif
+    
+    // Create bidirectional ESP-NOW initialization task (independent of telemetry)
+    #if ESP_NOW_BIDIRECTIONAL_ENABLE
+    ESP_LOGI(TAG, "ESP-NOW bidirectional ENABLED - Creating initialization task...");
+    xTaskCreate(espnow_bidirectional_init_task, "espnow_bidir_init", 8192, NULL, 3, NULL);
+    #else
+    ESP_LOGI(TAG, "ESP-NOW bidirectional DISABLED in board configuration");
     #endif
     
     ESP_LOGI(TAG, "Initialization complete - System ready");

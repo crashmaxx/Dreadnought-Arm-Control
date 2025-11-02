@@ -12,6 +12,14 @@
 #define FRAM_ADDR_BOOT_COUNT        0x0009  // uint32_t (4 bytes) - Boot counter
 #define FRAM_ADDR_TIMESTAMP         0x000D  // uint32_t (4 bytes) - Last save timestamp
 
+// ESP-NOW remote data addresses (starting at 0x0020 to avoid conflicts)
+#define FRAM_ADDR_REMOTE_ANGLE_CH2   0x0020  // Float (4 bytes) - Remote upper arm angle (channel 2)
+#define FRAM_ADDR_REMOTE_ANGLE_CH3   0x0024  // Float (4 bytes) - Remote elbow angle (channel 3)
+#define FRAM_ADDR_REMOTE_TIMESTAMP   0x0028  // uint32_t (4 bytes) - Remote data timestamp
+#define FRAM_ADDR_REMOTE_VALID_CH2   0x002C  // Bool (1 byte) - Remote channel 2 validity flag
+#define FRAM_ADDR_REMOTE_VALID_CH3   0x002D  // Bool (1 byte) - Remote channel 3 validity flag
+#define FRAM_ADDR_COMM_STATS         0x0030  // Communication statistics area (16 bytes)
+
 // Data structure for encoder state
 typedef struct {
     float current_angle;
@@ -20,6 +28,18 @@ typedef struct {
     uint32_t boot_count;
     uint32_t last_save_time;
 } fram_encoder_data_t;
+
+// Data structure for remote ESP-NOW angle data (multi-channel)
+typedef struct {
+    float remote_angle_ch2;        // Upper arm angle (channel 2)
+    float remote_angle_ch3;        // Elbow angle (channel 3)
+    uint32_t remote_timestamp;
+    bool remote_ch2_valid;         // Channel 2 data validity
+    bool remote_ch3_valid;         // Channel 3 data validity
+    uint32_t packets_received;
+    uint32_t packets_sent;
+    uint32_t last_communication_time;
+} fram_remote_data_t;
 
 /**
  * @brief Initialize I2C interface for FRAM communication
@@ -124,5 +144,28 @@ esp_err_t fram_test_connectivity(void);
  * @return ESP_OK on success, error code on failure
  */
 esp_err_t fram_clear_encoder_data(void);
+
+/**
+ * @brief Save remote ESP-NOW angle data to FRAM
+ * @param remote_data Remote data structure to save
+ * @return ESP_OK on success, error code on failure
+ */
+esp_err_t fram_save_remote_data(const fram_remote_data_t *remote_data);
+
+/**
+ * @brief Load remote ESP-NOW angle data from FRAM
+ * @param remote_data Pointer to remote data structure to populate
+ * @return ESP_OK on success, error code on failure
+ */
+esp_err_t fram_load_remote_data(fram_remote_data_t *remote_data);
+
+/**
+ * @brief Update remote angle data in FRAM (quick update for frequent data)
+ * @param channel Channel number (2 for upper arm, 3 for elbow)
+ * @param remote_angle New remote angle value
+ * @param timestamp Timestamp of the remote data
+ * @return ESP_OK on success, error code on failure
+ */
+esp_err_t fram_update_remote_angle(uint8_t channel, float remote_angle, uint32_t timestamp);
 
 #endif /* FRAM_I2C_H_ */

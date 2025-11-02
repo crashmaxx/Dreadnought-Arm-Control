@@ -341,7 +341,14 @@
   #define GEAR_RATIO 48.0f  // Motor to joint encoder reduction ratio
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 1
+  #define ESP_NOW_TELEMETRY_ENABLE 0
+  #define ESP_NOW_BIDIRECTIONAL_ENABLE 1  // Enable two-way communication
+  
+  // ESP-NOW peer configuration for bidirectional communication
+  #define REMOTE_ESP32_MAC_ADDR {0xA8, 0x42, 0xE3, 0xE4, 0x06, 0xA4}  // MAC address of the other ESP32
+  #define LOCAL_ESP32_ROLE "LEFT_SHOULDER"   // This device's role identifier
+  #define REMOTE_ESP32_ROLE "LEFT_ARM"       // Expected remote device role (upper arm + elbow)
+  // Note: Packet uses explicit channel_2 and channel_3 fields (maps to CRSF channels 2 and 3)
 
   //FRAM configuration I2C pins
   #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  

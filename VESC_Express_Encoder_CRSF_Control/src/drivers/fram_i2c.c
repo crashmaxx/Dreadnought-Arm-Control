@@ -386,3 +386,170 @@ esp_err_t fram_clear_encoder_data(void) {
     
     return ret;
 }
+
+esp_err_t fram_save_remote_data(const fram_remote_data_t *remote_data) {
+    if (!remote_data) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret;
+
+    // Save remote angle channel 2 (upper arm)
+    ret = fram_write_float(FRAM_ADDR_REMOTE_ANGLE_CH2, remote_data->remote_angle_ch2);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save remote angle CH2: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Save remote angle channel 3 (elbow)
+    ret = fram_write_float(FRAM_ADDR_REMOTE_ANGLE_CH3, remote_data->remote_angle_ch3);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save remote angle CH3: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Save remote timestamp
+    ret = fram_write_uint32(FRAM_ADDR_REMOTE_TIMESTAMP, remote_data->remote_timestamp);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save remote timestamp: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Save remote data validity flags
+    ret = fram_write_byte(FRAM_ADDR_REMOTE_VALID_CH2, remote_data->remote_ch2_valid ? 1 : 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save remote CH2 validity: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = fram_write_byte(FRAM_ADDR_REMOTE_VALID_CH3, remote_data->remote_ch3_valid ? 1 : 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save remote CH3 validity: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Save communication statistics
+    uint32_t comm_stats[4] = {
+        remote_data->packets_received,
+        remote_data->packets_sent,
+        remote_data->last_communication_time,
+        0  // Reserved for future use
+    };
+    
+    ret = fram_write_buffer(FRAM_ADDR_COMM_STATS, (uint8_t*)comm_stats, sizeof(comm_stats));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save communication stats: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    DEBUG_FRAM("Saved remote data - CH2:%.2f°(%s), CH3:%.2f°(%s), RX:%lu, TX:%lu", 
+               remote_data->remote_angle_ch2, remote_data->remote_ch2_valid ? "OK" : "BAD",
+               remote_data->remote_angle_ch3, remote_data->remote_ch3_valid ? "OK" : "BAD",
+               remote_data->packets_received, remote_data->packets_sent);
+
+    return ESP_OK;
+}
+
+esp_err_t fram_load_remote_data(fram_remote_data_t *remote_data) {
+    if (!remote_data) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t ret;
+    uint8_t valid_byte;
+
+    // Load remote angle channel 2 (upper arm)
+    ret = fram_read_float(FRAM_ADDR_REMOTE_ANGLE_CH2, &remote_data->remote_angle_ch2);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load remote angle CH2: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Load remote angle channel 3 (elbow)
+    ret = fram_read_float(FRAM_ADDR_REMOTE_ANGLE_CH3, &remote_data->remote_angle_ch3);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load remote angle CH3: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Load remote timestamp
+    ret = fram_read_uint32(FRAM_ADDR_REMOTE_TIMESTAMP, &remote_data->remote_timestamp);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load remote timestamp: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Load remote data validity flags
+    ret = fram_read_byte(FRAM_ADDR_REMOTE_VALID_CH2, &valid_byte);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load remote CH2 validity: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    remote_data->remote_ch2_valid = (valid_byte != 0);
+
+    ret = fram_read_byte(FRAM_ADDR_REMOTE_VALID_CH3, &valid_byte);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load remote CH3 validity: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    remote_data->remote_ch3_valid = (valid_byte != 0);
+
+    // Load communication statistics
+    uint32_t comm_stats[4];
+    ret = fram_read_buffer(FRAM_ADDR_COMM_STATS, (uint8_t*)comm_stats, sizeof(comm_stats));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load communication stats: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    remote_data->packets_received = comm_stats[0];
+    remote_data->packets_sent = comm_stats[1];
+    remote_data->last_communication_time = comm_stats[2];
+
+    DEBUG_FRAM("Loaded remote data - CH2:%.2f°(%s), CH3:%.2f°(%s), RX:%lu, TX:%lu", 
+               remote_data->remote_angle_ch2, remote_data->remote_ch2_valid ? "OK" : "BAD",
+               remote_data->remote_angle_ch3, remote_data->remote_ch3_valid ? "OK" : "BAD",
+               remote_data->packets_received, remote_data->packets_sent);
+
+    return ESP_OK;
+}
+
+esp_err_t fram_update_remote_angle(uint8_t channel, float remote_angle, uint32_t timestamp) {
+    esp_err_t ret;
+
+    // Determine which addresses to use based on channel
+    uint16_t angle_addr, valid_addr;
+    if (channel == 2) {
+        angle_addr = FRAM_ADDR_REMOTE_ANGLE_CH2;
+        valid_addr = FRAM_ADDR_REMOTE_VALID_CH2;
+    } else if (channel == 3) {
+        angle_addr = FRAM_ADDR_REMOTE_ANGLE_CH3;
+        valid_addr = FRAM_ADDR_REMOTE_VALID_CH3;
+    } else {
+        ESP_LOGE(TAG, "Invalid channel %d for remote angle update", channel);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Quick update of just angle and timestamp (for frequent updates)
+    ret = fram_write_float(angle_addr, remote_angle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to update remote angle CH%d: %s", channel, esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = fram_write_uint32(FRAM_ADDR_REMOTE_TIMESTAMP, timestamp);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to update remote timestamp: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Mark data as valid for this channel
+    ret = fram_write_byte(valid_addr, 1);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to update remote CH%d validity: %s", channel, esp_err_to_name(ret));
+        return ret;
+    }
+
+    DEBUG_FRAM("Updated remote CH%d angle: %.2f° at time %lu", channel, remote_angle, timestamp);
+    return ESP_OK;
+}
