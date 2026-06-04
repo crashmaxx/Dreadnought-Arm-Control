@@ -11,8 +11,8 @@
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
 //#define BOARD_LEFT_SHOULDER
-//#define BOARD_RIGHT_SHOULDER
-#define BOARD_LEFT_SHOULDER_DEMO
+#define BOARD_RIGHT_SHOULDER
+//#define BOARD_LEFT_SHOULDER_DEMO
 //#define BOARD_CUSTOM
 
 // ================= ENCODER TYPE CONFIGURATION =================
@@ -298,7 +298,7 @@
   #define CONTROL_CHANNEL 1
   #define REST_ANGLE 95.0f
   #define MIN_ANGLE 50.0f
-  #define MAX_ANGLE 100.0f
+  #define MAX_ANGLE 180.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -457,6 +457,23 @@
 // SPI MOSI behavior default
 #ifndef ENCODER_SPI_MOSI_ALWAYS_HIGH
   #define ENCODER_SPI_MOSI_ALWAYS_HIGH 0  // Default: normal SPI commands
+#endif
+
+// FRAM I2C defaults (boards without FRAM still compile)
+#ifndef FRAM_I2C_SDA_PIN
+  #define FRAM_I2C_SDA_PIN 3
+#endif
+
+#ifndef FRAM_I2C_SCL_PIN
+  #define FRAM_I2C_SCL_PIN 4
+#endif
+
+#ifndef FRAM_I2C_FREQ_HZ
+  #define FRAM_I2C_FREQ_HZ 400000
+#endif
+
+#ifndef FRAM_I2C_ADDRESS
+  #define FRAM_I2C_ADDRESS 0x50
 #endif
 
 

@@ -78,6 +78,8 @@
 static const char *TAG = "espnow_telemetry";
 
 static QueueHandle_t s_telemetry_espnow_queue = NULL;
+static bool s_espnow_initialized = false;
+static int s_espnow_refcount = 0;
 
 static uint8_t s_telemetry_broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint8_t s_telemetry_peer_mac[ESP_NOW_ETH_ALEN] = PEER_MAC_ADDR;  // Specific peer MAC from board config
@@ -91,23 +93,110 @@ static telemetry_payload_t s_telemetry_data = {
     .vesc_target_revolutions = 0.0f
 };
 
+esp_err_t espnow_wifi_init_station(uint8_t channel)
+{
+    static bool wifi_initialized = false;
+
+    if (!wifi_initialized) {
+        esp_err_t ret = esp_netif_init();
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+            return ret;
+        }
+
+        ret = esp_event_loop_create_default();
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+            return ret;
+        }
+
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ret = esp_wifi_init(&cfg);
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+            return ret;
+        }
+
+        ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
+        ret = esp_wifi_start();
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+            return ret;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+        wifi_initialized = true;
+        ESP_LOGI(TAG, "WiFi initialized for ESP-NOW (Channel %u, Station Mode)", channel);
+    }
+
+    return esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+}
+
+esp_err_t espnow_init_core(void)
+{
+    if (!s_espnow_initialized) {
+        esp_err_t ret = esp_now_init();
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        s_espnow_initialized = true;
+    }
+
+    s_espnow_refcount++;
+    return ESP_OK;
+}
+
+void espnow_release_core(void)
+{
+    if (s_espnow_refcount > 0) {
+        s_espnow_refcount--;
+    }
+
+    if (s_espnow_initialized && s_espnow_refcount == 0) {
+        esp_now_deinit();
+        s_espnow_initialized = false;
+    }
+}
+
+esp_err_t espnow_add_peer_open(const uint8_t *peer_addr, uint8_t channel)
+{
+    if (peer_addr == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (esp_now_is_peer_exist(peer_addr)) {
+        return ESP_OK;
+    }
+
+    esp_now_peer_info_t peer = {0};
+    peer.channel = channel;
+    peer.ifidx = ESPNOW_WIFI_IF;
+    peer.encrypt = false;
+    memcpy(peer.peer_addr, peer_addr, ESP_NOW_ETH_ALEN);
+
+    esp_err_t ret = esp_now_add_peer(&peer);
+    if (ret == ESP_ERR_ESPNOW_EXIST) {
+        return ESP_OK;
+    }
+
+    return ret;
+}
+
 static void telemetry_espnow_deinit(telemetry_espnow_send_param_t *send_param);
 
 /* ESPNOW sending or receiving callback function is called in WiFi task.
  * Users should not do lengthy operations from this task. Instead, post
  * necessary data to a queue and handle it from a lower priority task. */
-static void telemetry_espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
+static void telemetry_espnow_send_cb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status)
 {
     telemetry_espnow_event_t evt;
     telemetry_espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
 
-    if (mac_addr == NULL) {
+    if (tx_info == NULL || tx_info->des_addr == NULL) {
         ESP_LOGE(TAG, "Send cb arg error");
         return;
     }
 
     evt.id = TELEMETRY_ESPNOW_SEND_CB;
-    memcpy(send_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
+    memcpy(send_cb->mac_addr, tx_info->des_addr, ESP_NOW_ETH_ALEN);
     send_cb->status = status;
     if (xQueueSend(s_telemetry_espnow_queue, &evt, ESPNOW_MAXDELAY) != pdTRUE) {
         ESP_LOGW(TAG, "Send send queue fail");
@@ -372,10 +461,14 @@ esp_err_t telemetry_espnow_init(void)
         return ESP_FAIL;
     }
 
-    /* Initialize ESPNOW and register sending and receiving callback function. */
-    ESP_ERROR_CHECK( esp_now_init() );
+    ESP_ERROR_CHECK(espnow_wifi_init_station(CONFIG_ESPNOW_CHANNEL));
+
+    /* Initialize shared ESPNOW core and register telemetry callbacks. */
+    ESP_ERROR_CHECK(espnow_init_core());
     ESP_ERROR_CHECK( esp_now_register_send_cb(telemetry_espnow_send_cb) );
+#if !ESP_NOW_BIDIRECTIONAL_ENABLE
     ESP_ERROR_CHECK( esp_now_register_recv_cb(telemetry_espnow_recv_cb) );
+#endif
 #if CONFIG_ESPNOW_ENABLE_POWER_SAVE
     ESP_ERROR_CHECK( esp_now_set_wake_window(CONFIG_ESPNOW_WAKE_WINDOW) );
     ESP_ERROR_CHECK( esp_wifi_connectionless_module_set_wake_interval(CONFIG_ESPNOW_WAKE_INTERVAL) );
@@ -384,31 +477,9 @@ esp_err_t telemetry_espnow_init(void)
     // ESP_ERROR_CHECK( esp_now_set_pmk((uint8_t *)CONFIG_ESPNOW_PMK) );
 
     /* Add broadcast peer information to peer list. */
-    esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
-    if (peer == NULL) {
-        ESP_LOGE(TAG, "Malloc peer information fail");
-        vQueueDelete(s_telemetry_espnow_queue);
-        s_telemetry_espnow_queue = NULL;
-        esp_now_deinit();
-        return ESP_FAIL;
-    }
-    memset(peer, 0, sizeof(esp_now_peer_info_t));
-    peer->channel = CONFIG_ESPNOW_CHANNEL;
-    peer->ifidx = ESPNOW_WIFI_IF;
-    peer->encrypt = false;
-    memcpy(peer->peer_addr, s_telemetry_broadcast_mac, ESP_NOW_ETH_ALEN);
-    ESP_ERROR_CHECK( esp_now_add_peer(peer) );
-    
-    // Also add the specific peer MAC address from board config
-    memset(peer, 0, sizeof(esp_now_peer_info_t));
-    peer->channel = CONFIG_ESPNOW_CHANNEL;
-    peer->ifidx = ESPNOW_WIFI_IF;
-    peer->encrypt = false;
-    memcpy(peer->peer_addr, s_telemetry_peer_mac, ESP_NOW_ETH_ALEN);
-    ESP_ERROR_CHECK( esp_now_add_peer(peer) );
+    ESP_ERROR_CHECK(espnow_add_peer_open(s_telemetry_broadcast_mac, CONFIG_ESPNOW_CHANNEL));
+    ESP_ERROR_CHECK(espnow_add_peer_open(s_telemetry_peer_mac, CONFIG_ESPNOW_CHANNEL));
     DEBUG_ESPNOW_INT("Added ESP-NOW peer: "MACSTR, MAC2STR(s_telemetry_peer_mac));
-    
-    free(peer);
 
     /* Initialize sending parameters. */
     send_param = malloc(sizeof(telemetry_espnow_send_param_t));
@@ -416,7 +487,7 @@ esp_err_t telemetry_espnow_init(void)
         ESP_LOGE(TAG, "Malloc send parameter fail");
         vQueueDelete(s_telemetry_espnow_queue);
         s_telemetry_espnow_queue = NULL;
-        esp_now_deinit();
+        espnow_release_core();
         return ESP_FAIL;
     }
     memset(send_param, 0, sizeof(telemetry_espnow_send_param_t));
@@ -433,7 +504,7 @@ esp_err_t telemetry_espnow_init(void)
         free(send_param);
         vQueueDelete(s_telemetry_espnow_queue);
         s_telemetry_espnow_queue = NULL;
-        esp_now_deinit();
+        espnow_release_core();
         return ESP_FAIL;
     }
     memcpy(send_param->dest_mac, s_telemetry_peer_mac, ESP_NOW_ETH_ALEN);  // Use specific peer MAC
@@ -452,7 +523,7 @@ static void telemetry_espnow_deinit(telemetry_espnow_send_param_t *send_param)
     free(send_param);
     vQueueDelete(s_telemetry_espnow_queue);
     s_telemetry_espnow_queue = NULL;
-    esp_now_deinit();
+    espnow_release_core();
 }
 
 /* Send custom telemetry data via ESP-NOW */

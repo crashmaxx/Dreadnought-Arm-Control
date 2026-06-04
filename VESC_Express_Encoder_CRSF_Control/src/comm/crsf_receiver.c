@@ -30,7 +30,6 @@ static const char *TAG = "CRSF";
 
 // UART configuration
 static int crsf_uart_num = UART_NUM_1;
-static QueueHandle_t uart_queue = NULL;
 
 // CRSF data
 static crsf_channels_t crsf_channels = {0};
@@ -180,9 +179,11 @@ void crsf_init(int uart_num, int tx_pin, int rx_pin, int baudrate) {
         .source_clk = UART_SCLK_DEFAULT,
     };
     
-    ESP_ERROR_CHECK(uart_driver_install(crsf_uart_num, CRSF_UART_BUFFER_SIZE, CRSF_UART_BUFFER_SIZE, CRSF_UART_QUEUE_SIZE, &uart_queue, 0));
+    ESP_ERROR_CHECK(uart_driver_install(crsf_uart_num, CRSF_UART_BUFFER_SIZE, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(crsf_uart_num, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(crsf_uart_num, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_set_rx_full_threshold(crsf_uart_num, 1));
+    ESP_ERROR_CHECK(uart_set_rx_timeout(crsf_uart_num, 2));
     
     // Initialize channel data
     memset(&crsf_channels, 0, sizeof(crsf_channels));

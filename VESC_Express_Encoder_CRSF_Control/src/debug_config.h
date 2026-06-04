@@ -9,9 +9,9 @@
 // Debug configuration - set to 1 to enable, 0 to disable
 // These control what debug messages are shown in the serial monitor
 #define DEBUG_POSITION_CONTROL      0  // Position control debugging
-#define DEBUG_ENCODER_DATA          1  // Encoder data debugging
+#define DEBUG_ENCODER_DATA          0  // Encoder data debugging
 #define DEBUG_VESC_STATUS           0  // VESC status debugging (includes parameter updates)
-#define DEBUG_CRSF_CHANNELS         1  // CRSF channel data
+#define DEBUG_CRSF_CHANNELS         0  // CRSF channel data
 #define DEBUG_CAN_COMMANDS          0  // CAN command transmission
 #define DEBUG_ESPNOW_TELEMETRY      0  // ESP-NOW telemetry debugging
 #define DEBUG_ESPNOW_TEST           0  // Send random test data to ESP-NOW telemetry

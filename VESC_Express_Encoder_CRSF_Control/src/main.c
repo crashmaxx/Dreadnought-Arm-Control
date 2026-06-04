@@ -51,8 +51,8 @@
 // Main task and debug configuration
 static const char *TAG = "VESC_Express";
 
-// ESP-NOW telemetry configuration
-#if ESP_NOW_TELEMETRY_ENABLE
+// ESP-NOW telemetry / shared Wi-Fi configuration
+#if ESP_NOW_TELEMETRY_ENABLE || ESP_NOW_BIDIRECTIONAL_ENABLE
 #include "comm/comm_espnow.h"
 #endif
 
@@ -100,9 +100,13 @@ static bool encoder_calibrated = false;  // Flag to indicate if calibration has 
 
 // FRAM storage variables
 static fram_encoder_data_t fram_data = {0};
+#if ESP_NOW_BIDIRECTIONAL_ENABLE
 static fram_remote_data_t fram_remote_data = {0};
+#endif
 static uint32_t last_fram_save = 0;
+#if ESP_NOW_BIDIRECTIONAL_ENABLE
 static uint32_t last_fram_remote_save = 0;
+#endif
 static bool fram_initialized = false;
 
 // VESC configuration update tracking
@@ -470,29 +474,10 @@ void espnow_send_crsf_channels(uint32_t timestamp) {
 esp_err_t espnow_bidirectional_init(void) {
     esp_err_t ret;
     
-    // Initialize WiFi if not already done
-    static bool wifi_initialized = false;
-    if (!wifi_initialized) {
-        ESP_ERROR_CHECK(esp_netif_init());
-        ESP_ERROR_CHECK(esp_event_loop_create_default());
-        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-        ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_start());
-        
-        // Set WiFi channel for ESP-NOW (both devices must use same channel)
-        ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
-        
-        // Wait for WiFi interface to be fully ready
-        vTaskDelay(pdMS_TO_TICKS(100));
-        
-        ESP_LOGI(TAG, "WiFi initialized for bidirectional ESP-NOW (Channel 1, Station Mode)");
-        wifi_initialized = true;
-    }
+    ESP_ERROR_CHECK(espnow_wifi_init_station(1));
     
     // Initialize ESP-NOW
-    ret = esp_now_init();
+    ret = espnow_init_core();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ESP-NOW init failed: %s", esp_err_to_name(ret));
         return ret;
@@ -506,14 +491,9 @@ esp_err_t espnow_bidirectional_init(void) {
     }
 
     // Add remote peer
-    esp_now_peer_info_t peer_info = {0};
     uint8_t remote_mac[] = REMOTE_ESP32_MAC_ADDR;
-    memcpy(peer_info.peer_addr, remote_mac, 6);
-    peer_info.channel = 1;  // Same as WiFi channel
-    peer_info.encrypt = false;
-
-    ret = esp_now_add_peer(&peer_info);
-    if (ret != ESP_OK && ret != ESP_ERR_ESPNOW_EXIST) {
+    ret = espnow_add_peer_open(remote_mac, 1);
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ESP-NOW add peer failed: %s", esp_err_to_name(ret));
         return ret;
     }
@@ -996,21 +976,7 @@ void app_main(void) {
 
     // Initialize WiFi/networking if needed by ESP-NOW
     #if ESP_NOW_TELEMETRY_ENABLE
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    
-    // Set WiFi channel for ESP-NOW (both devices must use same channel)
-    ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
-    
-    // Wait for WiFi interface to be fully ready
-    vTaskDelay(pdMS_TO_TICKS(100));
-    
-    ESP_LOGI(TAG, "WiFi initialized for ESP-NOW (Channel 1, Station Mode)");
+    ESP_ERROR_CHECK(espnow_wifi_init_station(1));
     #endif
 
     // Initialize CAN interface

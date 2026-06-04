@@ -1,7 +1,7 @@
 #include "fram_i2c.h"
 #include "board_config.h"
 #include "debug_config.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -12,8 +12,9 @@ static const char *TAG = "FRAM_I2C";
 // I2C master configuration
 #define I2C_MASTER_NUM           I2C_NUM_0
 #define I2C_MASTER_TIMEOUT_MS    1000
-#define ACK_CHECK_EN             0x1
-#define ACK_CHECK_DIS            0x0
+
+static i2c_master_bus_handle_t fram_i2c_bus_handle = NULL;
+static i2c_master_dev_handle_t fram_i2c_device_handle = NULL;
 
 // Debug macros with rate limiting
 #if DEBUG_FRAM_I2C
@@ -38,24 +39,32 @@ esp_err_t fram_i2c_init(void) {
         return ESP_OK;
     }
 
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
+    i2c_master_bus_config_t bus_config = {
+        .i2c_port = I2C_MASTER_NUM,
         .sda_io_num = FRAM_I2C_SDA_PIN,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
         .scl_io_num = FRAM_I2C_SCL_PIN,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = FRAM_I2C_FREQ_HZ,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
     };
 
-    esp_err_t ret = i2c_param_config(I2C_MASTER_NUM, &conf);
+    esp_err_t ret = i2c_new_master_bus(&bus_config, &fram_i2c_bus_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "I2C parameter config failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "I2C master bus init failed: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    ret = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
+    i2c_device_config_t device_config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = FRAM_I2C_ADDRESS,
+        .scl_speed_hz = FRAM_I2C_FREQ_HZ,
+    };
+
+    ret = i2c_master_bus_add_device(fram_i2c_bus_handle, &device_config, &fram_i2c_device_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "I2C device add failed: %s", esp_err_to_name(ret));
+        i2c_del_master_bus(fram_i2c_bus_handle);
+        fram_i2c_bus_handle = NULL;
         return ret;
     }
 
@@ -79,7 +88,18 @@ esp_err_t fram_i2c_deinit(void) {
         return ESP_OK;
     }
 
-    esp_err_t ret = i2c_driver_delete(I2C_MASTER_NUM);
+    esp_err_t ret = ESP_OK;
+
+    if (fram_i2c_device_handle) {
+        ret = i2c_master_bus_rm_device(fram_i2c_device_handle);
+        fram_i2c_device_handle = NULL;
+    }
+
+    if (ret == ESP_OK && fram_i2c_bus_handle) {
+        ret = i2c_del_master_bus(fram_i2c_bus_handle);
+        fram_i2c_bus_handle = NULL;
+    }
+
     if (ret == ESP_OK) {
         i2c_initialized = false;
         ESP_LOGI(TAG, "FRAM I2C deinitialized");
@@ -92,16 +112,13 @@ esp_err_t fram_write_byte(uint16_t address, uint8_t data) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (FRAM_I2C_ADDRESS << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);
-    i2c_master_write_byte(cmd, (address >> 8) & 0xFF, ACK_CHECK_EN);  // Address high byte
-    i2c_master_write_byte(cmd, address & 0xFF, ACK_CHECK_EN);         // Address low byte
-    i2c_master_write_byte(cmd, data, ACK_CHECK_EN);
-    i2c_master_stop(cmd);
-    
-    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(I2C_MASTER_TIMEOUT_MS));
-    i2c_cmd_link_delete(cmd);
+    uint8_t buffer[3] = {
+        (uint8_t)((address >> 8) & 0xFF),
+        (uint8_t)(address & 0xFF),
+        data,
+    };
+
+    esp_err_t ret = i2c_master_transmit(fram_i2c_device_handle, buffer, sizeof(buffer), I2C_MASTER_TIMEOUT_MS);
 
     DEBUG_FRAM("Write byte 0x%02X to address 0x%04X: %s", data, address, esp_err_to_name(ret));
     return ret;
@@ -112,31 +129,18 @@ esp_err_t fram_read_byte(uint16_t address, uint8_t *data) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Write address
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (FRAM_I2C_ADDRESS << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);
-    i2c_master_write_byte(cmd, (address >> 8) & 0xFF, ACK_CHECK_EN);  // Address high byte
-    i2c_master_write_byte(cmd, address & 0xFF, ACK_CHECK_EN);         // Address low byte
-    i2c_master_stop(cmd);
-    
-    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(I2C_MASTER_TIMEOUT_MS));
-    i2c_cmd_link_delete(cmd);
-    
-    if (ret != ESP_OK) {
-        DEBUG_FRAM("Failed to write address 0x%04X for read: %s", address, esp_err_to_name(ret));
-        return ret;
-    }
+    uint8_t address_bytes[2] = {
+        (uint8_t)((address >> 8) & 0xFF),
+        (uint8_t)(address & 0xFF),
+    };
 
-    // Read data
-    cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (FRAM_I2C_ADDRESS << 1) | I2C_MASTER_READ, ACK_CHECK_EN);
-    i2c_master_read_byte(cmd, data, I2C_MASTER_NACK);
-    i2c_master_stop(cmd);
-    
-    ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(I2C_MASTER_TIMEOUT_MS));
-    i2c_cmd_link_delete(cmd);
+    esp_err_t ret = i2c_master_transmit_receive(
+        fram_i2c_device_handle,
+        address_bytes,
+        sizeof(address_bytes),
+        data,
+        1,
+        I2C_MASTER_TIMEOUT_MS);
 
     DEBUG_FRAM("Read byte 0x%02X from address 0x%04X: %s", *data, address, esp_err_to_name(ret));
     return ret;
@@ -147,19 +151,16 @@ esp_err_t fram_write_buffer(uint16_t address, const uint8_t *data, size_t length
         return ESP_ERR_INVALID_ARG;
     }
 
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (FRAM_I2C_ADDRESS << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);
-    i2c_master_write_byte(cmd, (address >> 8) & 0xFF, ACK_CHECK_EN);  // Address high byte
-    i2c_master_write_byte(cmd, address & 0xFF, ACK_CHECK_EN);         // Address low byte
-    
-    for (size_t i = 0; i < length; i++) {
-        i2c_master_write_byte(cmd, data[i], ACK_CHECK_EN);
-    }
-    
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(I2C_MASTER_TIMEOUT_MS));
-    i2c_cmd_link_delete(cmd);
+    uint8_t header[2] = {
+        (uint8_t)((address >> 8) & 0xFF),
+        (uint8_t)(address & 0xFF),
+    };
+
+    uint8_t buffer[length + 2];
+    memcpy(buffer, header, sizeof(header));
+    memcpy(&buffer[2], data, length);
+
+    esp_err_t ret = i2c_master_transmit(fram_i2c_device_handle, buffer, sizeof(buffer), I2C_MASTER_TIMEOUT_MS);
 
     DEBUG_FRAM("Write %d bytes to address 0x%04X: %s", length, address, esp_err_to_name(ret));
     return ret;
@@ -170,38 +171,18 @@ esp_err_t fram_read_buffer(uint16_t address, uint8_t *data, size_t length) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Write address
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (FRAM_I2C_ADDRESS << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);
-    i2c_master_write_byte(cmd, (address >> 8) & 0xFF, ACK_CHECK_EN);  // Address high byte
-    i2c_master_write_byte(cmd, address & 0xFF, ACK_CHECK_EN);         // Address low byte
-    i2c_master_stop(cmd);
-    
-    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(I2C_MASTER_TIMEOUT_MS));
-    i2c_cmd_link_delete(cmd);
-    
-    if (ret != ESP_OK) {
-        DEBUG_FRAM("Failed to write address 0x%04X for buffer read: %s", address, esp_err_to_name(ret));
-        return ret;
-    }
+    uint8_t address_bytes[2] = {
+        (uint8_t)((address >> 8) & 0xFF),
+        (uint8_t)(address & 0xFF),
+    };
 
-    // Read data
-    cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (FRAM_I2C_ADDRESS << 1) | I2C_MASTER_READ, ACK_CHECK_EN);
-    
-    for (size_t i = 0; i < length; i++) {
-        if (i == length - 1) {
-            i2c_master_read_byte(cmd, &data[i], I2C_MASTER_NACK);  // Last byte gets NACK
-        } else {
-            i2c_master_read_byte(cmd, &data[i], I2C_MASTER_ACK);   // Other bytes get ACK
-        }
-    }
-    
-    i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(I2C_MASTER_TIMEOUT_MS));
-    i2c_cmd_link_delete(cmd);
+    esp_err_t ret = i2c_master_transmit_receive(
+        fram_i2c_device_handle,
+        address_bytes,
+        sizeof(address_bytes),
+        data,
+        length,
+        I2C_MASTER_TIMEOUT_MS);
 
     DEBUG_FRAM("Read %d bytes from address 0x%04X: %s", length, address, esp_err_to_name(ret));
     return ret;

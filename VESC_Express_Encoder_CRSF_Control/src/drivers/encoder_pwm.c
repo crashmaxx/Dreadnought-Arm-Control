@@ -92,18 +92,27 @@ static void IRAM_ATTR pwm_gpio_isr_handler(void* arg) {
 static bool pwm_encoder_init(void) {
     ESP_LOGI(TAG, "Initializing PWM magnetic encoder on GPIO %d", ENCODER_PWM_PIN);
     
-    // Configure GPIO for input
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << ENCODER_PWM_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_ANYEDGE
-    };
-    
-    esp_err_t ret = gpio_config(&io_conf);
+    esp_err_t ret = gpio_set_direction(ENCODER_PWM_PIN, GPIO_MODE_INPUT);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "GPIO config failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "GPIO direction setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_set_pull_mode(ENCODER_PWM_PIN, GPIO_PULLUP_ONLY);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO pull setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_set_intr_type(ENCODER_PWM_PIN, GPIO_INTR_ANYEDGE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO interrupt type setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_intr_disable(ENCODER_PWM_PIN);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO interrupt disable failed: %s", esp_err_to_name(ret));
         return false;
     }
     

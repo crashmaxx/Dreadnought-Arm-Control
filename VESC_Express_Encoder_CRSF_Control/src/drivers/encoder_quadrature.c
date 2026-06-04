@@ -80,18 +80,51 @@ static bool quad_encoder_init(void) {
     // Calculate radians per pulse (4x encoding: 4 edges per line, but using 2x with GPIO interrupts)
     quad_state.radians_per_pulse = (2.0f * M_PI) / (ENCODER_PPR * 2.0f);
     
-    // Configure GPIO pins
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << ENCODER_A_PIN) | (1ULL << ENCODER_B_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_ANYEDGE
-    };
-    
-    esp_err_t ret = gpio_config(&io_conf);
+    esp_err_t ret = gpio_set_direction(ENCODER_A_PIN, GPIO_MODE_INPUT);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "GPIO config failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "GPIO A direction setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_set_direction(ENCODER_B_PIN, GPIO_MODE_INPUT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO B direction setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_set_pull_mode(ENCODER_A_PIN, GPIO_PULLUP_ONLY);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO A pull setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_set_pull_mode(ENCODER_B_PIN, GPIO_PULLUP_ONLY);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO B pull setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_set_intr_type(ENCODER_A_PIN, GPIO_INTR_ANYEDGE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO A interrupt type setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_set_intr_type(ENCODER_B_PIN, GPIO_INTR_ANYEDGE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO B interrupt type setup failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_intr_disable(ENCODER_A_PIN);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO A interrupt disable failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = gpio_intr_disable(ENCODER_B_PIN);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO B interrupt disable failed: %s", esp_err_to_name(ret));
         return false;
     }
     
