@@ -279,19 +279,23 @@ static uint8_t AS504x_fetch_diag(AS504x_config_t *cfg) {
 		}
 		
 		// Debug: Log diagnostic fetch details periodically
+#if DEBUG_VERBOSE
 		static uint32_t diag_debug_count = 0;
 		diag_debug_count++;
 		if (diag_debug_count % 50 == 1) {
-			printf("[AS504x] Diag fetch: ret=%d, recf[0]=0x%04X (parity=%d), recf[1]=0x%04X (parity=%d)\n", 
+			DEBUG_VERBOSE_LOG(TAG, "Diag fetch: ret=%d, recf[0]=0x%04X (parity=%d), recf[1]=0x%04X (parity=%d)",
 			       ret, recf[0], parity_ok_0, recf[1], parity_ok_1);
 		}
+#endif
 	} else {
 		// Debug: Log error condition
+#if DEBUG_VERBOSE
 		static uint32_t error_debug_count = 0;
 		error_debug_count++;
 		if (error_debug_count % 50 == 1) {
-			printf("[AS504x] SPI transfer error detected (ret=%d)\n", ret);
+			DEBUG_VERBOSE_LOGW(TAG, "SPI transfer error detected (ret=%d)", ret);
 		}
+#endif
 	}
 
 	return ret;

@@ -427,12 +427,6 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 					       id, stat_tmp_4->temp_fet, stat_tmp_4->pid_pos_now);
 				}
 				
-				// Trigger event-driven control logic when we receive Status 4 from our VESC
-				// This ensures position control is perfectly synchronized with fresh VESC data
-				if (id == CAN_VESC_ID) {
-					main_process_control_logic();
-				}
-				
 				break;
 			}
 		}
@@ -740,7 +734,9 @@ static esp_err_t start_twai_node(int pin_tx, int pin_rx) {
 	node_config.io_cfg.bus_off_indicator = -1;
 	node_config.bit_timing.bitrate = can_bitrate;
 	node_config.tx_queue_depth = 20;
-	node_config.fail_retry_cnt = -1;
+	// Avoid permanent TX queue saturation when ACKs are temporarily missing.
+	// Infinite retries (-1) can hold queue slots forever and trigger repeated "tx queue full" logs.
+	node_config.fail_retry_cnt = 2;
 	node_config.intr_priority = 0;
 	node_config.clk_src = TWAI_CLK_SRC_DEFAULT;
 
@@ -971,8 +967,8 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 		return;
 	}
 
-	(void)twai_node_transmit(can_node_handle, &tx_msg, 5);
-	(void)twai_node_transmit_wait_all_done(can_node_handle, 5);
+	(void)twai_node_transmit(can_node_handle, &tx_msg, 20);
+	(void)twai_node_transmit_wait_all_done(can_node_handle, 20);
 
 	xSemaphoreGive(send_mutex);
 }
@@ -1002,8 +998,8 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 		return;
 	}
 
-	(void)twai_node_transmit(can_node_handle, &tx_msg, 5);
-	(void)twai_node_transmit_wait_all_done(can_node_handle, 5);
+	(void)twai_node_transmit(can_node_handle, &tx_msg, 20);
+	(void)twai_node_transmit_wait_all_done(can_node_handle, 20);
 
 	xSemaphoreGive(send_mutex);
 }

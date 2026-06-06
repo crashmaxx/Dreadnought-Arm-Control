@@ -49,7 +49,7 @@
 #include <string.h>
 
 // Main task and debug configuration
-static const char *TAG = "VESC_Express";
+static const char *TAG = "";
 
 // ESP-NOW telemetry / shared Wi-Fi configuration
 #if ESP_NOW_TELEMETRY_ENABLE || ESP_NOW_BIDIRECTIONAL_ENABLE
@@ -103,11 +103,25 @@ static fram_encoder_data_t fram_data = {0};
 #if ESP_NOW_BIDIRECTIONAL_ENABLE
 static fram_remote_data_t fram_remote_data = {0};
 #endif
+#if FRAM_ENABLE
 static uint32_t last_fram_save = 0;
+#endif
 #if ESP_NOW_BIDIRECTIONAL_ENABLE
 static uint32_t last_fram_remote_save = 0;
 #endif
 static bool fram_initialized = false;
+
+// Startup alignment state
+static bool was_armed_last_cycle = false;
+static bool startup_pid_offset_sync_pending = false;
+static uint32_t arm_transition_hold_until_ms = 0;
+static bool startup_pid_offset_sync_waiting_status4 = false;
+static TickType_t startup_pid_offset_status4_tick_at_send = 0;
+static TickType_t latest_status4_rx_tick = 0;
+
+// Assumed maximum passive joint movement while powered off.
+// Used only for startup diagnostics; control still runs if exceeded.
+#define FRAM_MAX_OFF_MOVEMENT_DEG 180.0f
 
 // VESC configuration update tracking
 static uint32_t last_vesc_config_update = 0;
@@ -146,20 +160,28 @@ void update_vesc_motion_parameters(uint32_t current_time) {
     const uint32_t CONFIG_UPDATE_INTERVAL_MS = 5000;  // 5 seconds
     
     if (!vesc_config_sent || (current_time - last_vesc_config_update > CONFIG_UPDATE_INTERVAL_MS)) {
-        ESP_LOGI(TAG, "Updating VESC motion parameters");
+        #if DEBUG_VESC_STATUS
+        ESP_LOGI(TAG, "[VESC] Updating VESC motion parameters");
+        #endif
         
         // Send velocity and acceleration limits (wait for safe CAN slots between commands)
         wait_for_safe_can_slot();
         comm_can_set_max_sp_vel(CAN_VESC_ID, MAX_VEL);
-        ESP_LOGI(TAG, "Set max velocity: %.1f", MAX_VEL);
+        #if DEBUG_CAN_COMMANDS
+        ESP_LOGI(TAG, "[CAN_CMD] CMD_ID=%d (SET_MAX_SP_VEL) to VESC_ID=%d, value=%.1f", CAN_PACKET_SET_MAX_SP_VEL, CAN_VESC_ID, MAX_VEL);
+        #endif
         
         wait_for_safe_can_slot();
         comm_can_set_max_sp_accel(CAN_VESC_ID, MAX_ACCEL);
-        ESP_LOGI(TAG, "Set max acceleration: %.1f", MAX_ACCEL);
+        #if DEBUG_CAN_COMMANDS
+        ESP_LOGI(TAG, "[CAN_CMD] CMD_ID=%d (SET_MAX_SP_ACCEL) to VESC_ID=%d, value=%.1f", CAN_PACKET_SET_MAX_SP_ACCEL, CAN_VESC_ID, MAX_ACCEL);
+        #endif
         
         wait_for_safe_can_slot();
         comm_can_set_max_sp_decel(CAN_VESC_ID, MAX_DECEL);
-        ESP_LOGI(TAG, "Set max deceleration: %.1f", MAX_DECEL);
+        #if DEBUG_CAN_COMMANDS
+        ESP_LOGI(TAG, "[CAN_CMD] CMD_ID=%d (SET_MAX_SP_DECEL) to VESC_ID=%d, value=%.1f", CAN_PACKET_SET_MAX_SP_DECEL, CAN_VESC_ID, MAX_DECEL);
+        #endif
         
         last_vesc_config_update = current_time;
         vesc_config_sent = true;
@@ -248,6 +270,77 @@ float get_calibrated_encoder_angle_deg(void) {
     } else {
         return raw_angle;  // Return raw angle if not calibrated yet
     }
+}
+
+static float absf_local(float x) {
+    return (x < 0.0f) ? -x : x;
+}
+
+// Return angle adjusted by integer turns so it is closest to ref_deg.
+static float wrap_angle_near_reference(float angle_deg, float ref_deg) {
+    while ((angle_deg - ref_deg) > 180.0f) {
+        angle_deg -= 360.0f;
+    }
+    while ((angle_deg - ref_deg) < -180.0f) {
+        angle_deg += 360.0f;
+    }
+    return angle_deg;
+}
+
+// Reconcile restored calibration offset with the current raw encoder reading.
+// This preserves angle continuity across reboot by selecting the nearest turn-equivalent offset.
+void fram_reconcile_startup_encoder_reference(void) {
+#if FRAM_ENABLE
+    if (!fram_initialized || !fram_data.calibrated || !encoder_calibrated) {
+        return;
+    }
+
+    encoder_update();
+    if (!encoder_is_valid()) {
+        ESP_LOGW(TAG, "FRAM: Startup reconcile skipped (encoder invalid)");
+        return;
+    }
+
+    float raw_now = encoder_get_angle_deg();
+    float saved_angle = fram_data.current_angle;
+    float base_calibrated = raw_now + encoder_calibration_offset;
+
+    int best_turn_adjust = 0;
+    float best_err = 1e9f;
+
+    for (int k = -3; k <= 3; k++) {
+        float candidate = base_calibrated + (360.0f * (float)k);
+        float err = absf_local(candidate - saved_angle);
+        if (err < best_err) {
+            best_err = err;
+            best_turn_adjust = k;
+        }
+    }
+
+    if (best_turn_adjust != 0) {
+        float turn_adjust_deg = 360.0f * (float)best_turn_adjust;
+        encoder_calibration_offset += turn_adjust_deg;
+        ESP_LOGI(TAG, "FRAM: Startup reconcile adjusted offset by %+d turn(s) (%.1f deg)",
+                 best_turn_adjust, turn_adjust_deg);
+    }
+
+    float reconciled_angle = raw_now + encoder_calibration_offset;
+    float startup_delta = reconciled_angle - saved_angle;
+
+    if (absf_local(startup_delta) > FRAM_MAX_OFF_MOVEMENT_DEG) {
+        ESP_LOGW(TAG, "FRAM: Startup delta %.1f deg exceeds expected off-power movement (%.1f deg)",
+                 startup_delta, FRAM_MAX_OFF_MOVEMENT_DEG);
+    } else {
+        ESP_LOGI(TAG, "FRAM: Startup delta from last saved angle: %.1f deg", startup_delta);
+    }
+
+    // Keep persisted state consistent with reconciled offset for future boots.
+    fram_data.current_angle = reconciled_angle;
+    fram_data.calibration_offset = encoder_calibration_offset;
+
+    // Request one-time VESC position-offset synchronization when arming.
+    startup_pid_offset_sync_pending = true;
+#endif
 }
 
 // Initialize FRAM and load saved encoder data on startup
@@ -405,7 +498,7 @@ void espnow_receive_callback(const esp_now_recv_info_t *recv_info, const uint8_t
              received_packet.sequence_number, current_time - received_packet.timestamp);
 
     // Save to FRAM (rate limited)
-    #ifdef FRAM_I2C_SDA_PIN
+    #if FRAM_ENABLE
     if (fram_initialized && (current_time - last_fram_remote_save > 1000)) {  // Save remote data every 1 second
         if (received_packet.channel_count >= 1) {
             // Save upper arm angle (RX channel 0)
@@ -520,11 +613,34 @@ void crsf_control_task(void *pvParameters) {
     
     // Failsafe state tracking
     static bool was_connected = false;
+    static uint32_t last_can_ping = 0;
+    static uint32_t last_ping_warning = 0;
+    static uint32_t last_failsafe_current_cmd = 0;
+    static uint32_t last_status_id_hint = 0;
+    static uint32_t last_status4_rx_log = 0;
+    static uint32_t last_ping_ok_log = 0;
+    static TickType_t last_status4_rx_tick = 0;
 
     ESP_LOGI(TAG, "CRSF control task started");
 
     while (1) {
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        // Periodic CAN ping gives explicit RX/TX health feedback even before STATUS_4 arrives.
+        if ((current_time - last_can_ping) >= 500) {
+            HW_TYPE hw_type = HW_TYPE_VESC;
+            bool ping_ok = comm_can_ping(CAN_VESC_ID, &hw_type);
+
+            if (!ping_ok && (current_time - last_ping_warning) >= 2000) {
+                ESP_LOGW(TAG, "CAN ping timeout to VESC ID %d (no PONG)", CAN_VESC_ID);
+                last_ping_warning = current_time;
+            } else if (ping_ok && (current_time - last_ping_ok_log) >= 5000) {
+                ESP_LOGI(TAG, "CAN ping OK from VESC ID %d", CAN_VESC_ID);
+                last_ping_ok_log = current_time;
+            }
+
+            last_can_ping = current_time;
+        }
 
         // VESC sends status messages automatically - we just check if we have recent data
         can_status_msg_4 *vesc_status = comm_can_get_status_msg_4_id(CAN_VESC_ID);
@@ -537,9 +653,26 @@ void crsf_control_task(void *pvParameters) {
                 // VESC data is fresh (less than 300ms old)
                 vesc_current_position = vesc_status->pid_pos_now;
                 vesc_position_valid = true;
+
+                bool is_new_status4 = (vesc_status->rx_time != last_status4_rx_tick);
+                if (is_new_status4) {
+                    last_status4_rx_tick = vesc_status->rx_time;
+                    latest_status4_rx_tick = vesc_status->rx_time;
+                }
+
+                if ((current_time - last_status4_rx_log) >= 2000) {
+                    ESP_LOGI(TAG, "CAN RX STATUS_4 ID %d: pos=%.3f rev age=%lums", CAN_VESC_ID, vesc_current_position, age_ms);
+                    last_status4_rx_log = current_time;
+                }
                 
                 // Update position tracking for fallback
                 update_vesc_position_tracking(vesc_current_position, current_time);
+
+                // Run control once per new STATUS_4 frame so commands are synchronized
+                // to fresh VESC position data while staying in the control task context.
+                if (is_new_status4) {
+                    main_process_control_logic();
+                }
                 
                 // Rate limit VESC debug messages to every 2 seconds
                 if (current_time - last_vesc_debug > 2000) {
@@ -558,6 +691,19 @@ void crsf_control_task(void *pvParameters) {
         } else {
             // No VESC status message received at all
             vesc_position_valid = false;
+
+            // Hint when STATUS_4 frames are seen from another ID (common CAN_VESC_ID mismatch case).
+            if (current_time - last_status_id_hint > 2000) {
+                for (int i = 0; i < CAN_STATUS_MSGS_TO_STORE; i++) {
+                    can_status_msg_4 *status_hint = comm_can_get_status_msg_4_index(i);
+                    if (status_hint && status_hint->id >= 0 && status_hint->id != CAN_VESC_ID) {
+                        ESP_LOGW(TAG, "STATUS_4 seen from VESC ID %d, but CAN_VESC_ID is %d", status_hint->id, CAN_VESC_ID);
+                        break;
+                    }
+                }
+                last_status_id_hint = current_time;
+            }
+
             // Rate limit VESC debug messages to every 2 seconds
             if (current_time - last_vesc_debug > 2000) {
                 DEBUG_VESC("VESC ID %d missing from CAN", CAN_VESC_ID);
@@ -584,71 +730,75 @@ void crsf_control_task(void *pvParameters) {
             last_encoder_print = current_time;
         }
         
-        // Check for new CRSF data
-        if (crsf_has_new_data()) {
+        // CRSF failsafe should depend on connection state, not whether a new frame
+        // happened to arrive this exact control tick.
+        if (crsf_is_connected()) {
             // Reset failsafe state when connection is restored
             if (!was_connected) {
-                // Connection restored - reset state for next time
                 was_connected = true;
             }
-            
-            // Get all channel values (scaled to 1000-2000)
-            crsf_get_all_channels_scaled(channels);
-            
-            // Print channel data for debugging
-            #if DEBUG_CRSF_CHANNELS
-            if (current_time - last_print > CRSF_DEBUG_PRINT_RATE_MS) {
-                uint32_t last_update = crsf_get_last_update_time();
-                uint32_t age_ms = current_time - last_update;
-                ESP_LOGI(TAG, "[CRSF] Ch1:%d Ch2:%d Ch3:%d Ch4:%d Ch5:%d Ch6:%d Age:%lums", 
-                         channels[0], channels[1], channels[2], channels[3], 
-                         channels[4], channels[5], age_ms);
-                last_print = current_time;
-            }
-            #endif
-            
-            // Channel 6 calibration - sets encoder zero position to REST_ANGLE when activated
-            // SAFETY: Only allow calibration when CRSF connected, VESC connected, but system DISARMED
-            bool channel6_high = (channels[CRSF_CHANNEL_AUX2 - 1] > 1700);  // Channel 6 = AUX2 (high position)
-            if (crsf_is_connected() && !crsf_is_armed() && vesc_position_valid && channel6_high && !last_channel6_state) {
-                // Channel 6 transitioned from low to high - trigger calibration
-                // Rate limit calibration to prevent accidental repeated triggers
-                if (current_time - last_calibration_time > 2000) {  // Rate limit to once per 2 seconds
-                    ESP_LOGI(TAG, "[CALIBRATION] Channel 6 triggered - calibrating current position to %.1f degrees", REST_ANGLE);
-                    
-                    // Update encoder data to get current reading
-                    encoder_update();
-                    
-                    if (encoder_is_valid()) {
-                        // Calculate offset so current encoder reading equals REST_ANGLE
-                        float current_raw_angle = encoder_get_angle_deg();
-                        encoder_calibration_offset = REST_ANGLE - current_raw_angle;
-                        encoder_calibrated = true;
-                        
-                        ESP_LOGI(TAG, "[CALIBRATION] Encoder calibrated: Raw=%.1f°, Offset=%.1f°, Calibrated=%.1f°", 
-                                current_raw_angle, encoder_calibration_offset, REST_ANGLE);
-                        
-                        // Save calibration data to FRAM immediately
-                        #ifdef FRAM_I2C_SDA_PIN
-                        if (fram_initialized) {
-                            fram_save_current_encoder_data(current_time);
-                            ESP_LOGI(TAG, "[CALIBRATION] Calibration data saved to FRAM");
-                        }
-                        #endif
-                    } else {
-                        ESP_LOGW(TAG, "[CALIBRATION] Encoder calibration failed - encoder not valid");
-                    }
-                    
-                    last_calibration_time = current_time;
-                } else {
-                    ESP_LOGW(TAG, "[CALIBRATION] Ignoring calibration request (rate limited)");
+
+            if (crsf_has_new_data()) {
+                // Get all channel values (scaled to 1000-2000)
+                crsf_get_all_channels_scaled(channels);
+
+                // Print channel data for debugging
+                #if DEBUG_CRSF_CHANNELS
+                if (current_time - last_print > CRSF_DEBUG_PRINT_RATE_MS) {
+                    uint32_t last_update = crsf_get_last_update_time();
+                    uint32_t age_ms = current_time - last_update;
+                    ESP_LOGI(TAG, "[CRSF] Ch1:%d Ch2:%d Ch3:%d Ch4:%d Ch5:%d Ch6:%d Age:%lums",
+                             channels[0], channels[1], channels[2], channels[3],
+                             channels[4], channels[5], age_ms);
+                    last_print = current_time;
                 }
+                #endif
+
+                // Channel 6 calibration - sets encoder zero position to REST_ANGLE when activated
+                // SAFETY: Only allow calibration when CRSF connected, VESC connected, but system DISARMED
+                bool channel6_high = (channels[CRSF_CHANNEL_AUX2 - 1] > 1700);  // Channel 6 = AUX2 (high position)
+                if (!crsf_is_armed() && vesc_position_valid && channel6_high && !last_channel6_state) {
+                    // Channel 6 transitioned from low to high - trigger calibration
+                    // Rate limit calibration to prevent accidental repeated triggers
+                    if (current_time - last_calibration_time > 2000) {  // Rate limit to once per 2 seconds
+                        ESP_LOGI(TAG, "[CALIBRATION] Channel 6 triggered - calibrating current position to %.1f degrees", REST_ANGLE);
+
+                        // Update encoder data to get current reading
+                        encoder_update();
+
+                        if (encoder_is_valid()) {
+                            // Calculate offset so current encoder reading equals REST_ANGLE
+                            float current_raw_angle = encoder_get_angle_deg();
+                            encoder_calibration_offset = REST_ANGLE - current_raw_angle;
+                            encoder_calibrated = true;
+
+                            ESP_LOGI(TAG, "[CALIBRATION] Encoder calibrated: Raw=%.1f°, Offset=%.1f°, Calibrated=%.1f°",
+                                    current_raw_angle, encoder_calibration_offset, REST_ANGLE);
+
+                            // Save calibration data to FRAM immediately
+                            #if FRAM_ENABLE
+                            if (fram_initialized) {
+                                fram_save_current_encoder_data(current_time);
+                                ESP_LOGI(TAG, "[CALIBRATION] Calibration data saved to FRAM");
+                            }
+                            #endif
+                        } else {
+                            ESP_LOGW(TAG, "[CALIBRATION] Encoder calibration failed - encoder not valid");
+                        }
+
+                        last_calibration_time = current_time;
+                    } else {
+                        ESP_LOGW(TAG, "[CALIBRATION] Ignoring calibration request (rate limited)");
+                    }
+                }
+                last_channel6_state = channel6_high;
             }
-            last_channel6_state = channel6_high;
-            
         } else {
-            // No connection - apply safety behavior
-            comm_can_set_current(CAN_VESC_ID, 0.0f);  // Send zero current command to ensure motor is not driven
+            // Connection lost - apply safety behavior
+            if ((current_time - last_failsafe_current_cmd) >= 50) {
+                comm_can_set_current(CAN_VESC_ID, 0.0f);  // Keep motor disabled without flooding CAN TX
+                last_failsafe_current_cmd = current_time;
+            }
             if (was_connected) {
                 // Just lost connection - reset state to prepare for next time
                 was_connected = false;
@@ -681,7 +831,7 @@ void crsf_control_task(void *pvParameters) {
         #endif
         
         // Periodic FRAM saving - save complete encoder data every 60 seconds (angle saved after each CAN frame)
-        #ifdef FRAM_I2C_SDA_PIN
+        #if FRAM_ENABLE
         if (fram_initialized && (current_time - last_fram_save > 60000)) {  // Save complete data every 60 seconds
             fram_save_current_encoder_data(current_time);
             
@@ -699,17 +849,73 @@ void crsf_control_task(void *pvParameters) {
 }
 
 // Control function called from CAN Status 4 callback - executes position control logic
-// This ensures control calculations are synchronized with fresh VESC position data
-// NOTE: This function only runs when STATUS_4 messages are received from the VESC.
-// The crsf_control_task includes periodic ping to ensure STATUS_4 messages continue
-// even when the VESC isn't actively running motor control.
+// This is invoked by crsf_control_task when a NEW STATUS_4 frame is observed.
+// That keeps control synchronized with fresh VESC position data without running
+// control logic in the CAN RX parsing context.
 void main_process_control_logic(void) {
     uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
     static uint32_t last_can_cmd_debug = 0;
     static uint32_t last_position_debug = 0;
+    static uint32_t last_pos_cmd_time = 0;
+    static float last_pos_cmd_revs = 0.0f;
+    static bool pos_cmd_initialized = false;
     
     // Check if armed using utility function (requires CRSF connection)
     if (crsf_is_connected() && crsf_is_armed()) {
+        // After sending startup PID offset sync, wait until a newer STATUS_4 is observed.
+        if (startup_pid_offset_sync_waiting_status4) {
+            if (latest_status4_rx_tick == startup_pid_offset_status4_tick_at_send) {
+                // Keep motor disabled while waiting for post-sync status.
+                wait_for_safe_can_slot();
+                comm_can_set_current(CAN_VESC_ID, 0.0f);
+                return;
+            }
+
+            startup_pid_offset_sync_waiting_status4 = false;
+            arm_transition_hold_until_ms = current_time + 300;
+            last_pos_cmd_time = current_time;
+            last_pos_cmd_revs = vesc_current_position;
+            pos_cmd_initialized = false;
+            ESP_LOGI(TAG, "Startup sync: STATUS_4 refreshed after PID offset update");
+        }
+
+        // Handle arm transition once to avoid startup lurch.
+        if (!was_armed_last_cycle) {
+            was_armed_last_cycle = true;
+            arm_transition_hold_until_ms = current_time + 300;
+
+            // If FRAM startup reconciliation ran, sync VESC PID position offset to current encoder angle.
+            if (startup_pid_offset_sync_pending) {
+                encoder_update();
+                if (encoder_is_valid()) {
+                    float current_joint_deg = get_calibrated_encoder_angle_deg();
+                    float target_vesc_revolutions = current_joint_deg * GEAR_RATIO / 360.0f;
+                    wait_for_safe_can_slot();
+                    // Runtime-only sync to avoid unnecessary persistent writes on every reboot.
+                    comm_can_update_pid_pos_offset(CAN_VESC_ID, target_vesc_revolutions, false);
+                    startup_pid_offset_status4_tick_at_send = latest_status4_rx_tick;
+                    startup_pid_offset_sync_waiting_status4 = true;
+                    ESP_LOGI(TAG, "Startup sync: sent VESC PID pos offset update to %.6f rev", target_vesc_revolutions);
+                    startup_pid_offset_sync_pending = false;
+                } else {
+                    ESP_LOGW(TAG, "Startup sync pending: encoder invalid at arm transition");
+                }
+            } else {
+                // No startup sync needed: hold current VESC position for one control frame.
+                wait_for_safe_can_slot();
+                comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_current_position);
+            }
+
+            return;
+        }
+
+        // Hold briefly after arm transition so status data can settle before normal control.
+        if (current_time < arm_transition_hold_until_ms) {
+            wait_for_safe_can_slot();
+            comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_current_position);
+            return;
+        }
+
         // Armed mode - send actual motor commands
         if (vesc_position_valid) {
             // Convert CRSF channel to target angle (using board-configured control channel)
@@ -728,6 +934,8 @@ void main_process_control_logic(void) {
             if (using_encoder_feedback) {
                 // Use encoder feedback for closed-loop control
                 current_position_degrees = get_calibrated_encoder_angle_deg();
+                // Avoid multi-turn jumps after reboot by comparing on the nearest equivalent turn.
+                current_position_degrees = wrap_angle_near_reference(current_position_degrees, crsf_target_degrees);
             } else if (is_vesc_tracking_valid(current_time)) {
                 // Use VESC position tracking as fallback
                 current_position_degrees = get_vesc_fallback_position_degrees();
@@ -755,6 +963,17 @@ void main_process_control_logic(void) {
             
             // Send position command to VESC (wait for safe CAN slot to avoid collisions)
             wait_for_safe_can_slot();
+
+            // Limit position command rate and skip tiny changes to avoid flooding custom firmware handlers.
+            bool interval_elapsed = (current_time - last_pos_cmd_time) >= 25;  // max 40 Hz
+            float pos_delta = vesc_target_position_revolutions - last_pos_cmd_revs;
+            if (pos_delta < 0.0f) {
+                pos_delta = -pos_delta;
+            }
+            bool meaningful_change = (!pos_cmd_initialized) || (pos_delta >= 0.002f);
+            if (!(interval_elapsed && meaningful_change)) {
+                return;
+            }
             
             // Rate limit CAN command debug to every 2 seconds
             if (current_time - last_can_cmd_debug > 2000) {
@@ -762,9 +981,12 @@ void main_process_control_logic(void) {
                 last_can_cmd_debug = current_time;
             }
             comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_target_position_revolutions);
+            last_pos_cmd_time = current_time;
+            last_pos_cmd_revs = vesc_target_position_revolutions;
+            pos_cmd_initialized = true;
             
             // Save current encoder angle to FRAM after each CAN position command
-            #ifdef FRAM_I2C_SDA_PIN
+            #if FRAM_ENABLE
             if (fram_initialized) {
                 fram_write_float(FRAM_ADDR_ENCODER_ANGLE, current_position_degrees);
                 fram_write_uint32(FRAM_ADDR_TIMESTAMP, current_time);
@@ -802,6 +1024,10 @@ void main_process_control_logic(void) {
             }
         }
     } else {
+        was_armed_last_cycle = false;
+        arm_transition_hold_until_ms = 0;
+        startup_pid_offset_sync_waiting_status4 = false;
+
         // Disarmed mode - show what position control would do for debugging
         if (vesc_position_valid) {
             // Convert CRSF channel to target angle (using board-configured control channel)
@@ -818,6 +1044,7 @@ void main_process_control_logic(void) {
             
             if (using_encoder_feedback) {
                 current_position_degrees = get_calibrated_encoder_angle_deg();
+                current_position_degrees = wrap_angle_near_reference(current_position_degrees, crsf_target_degrees);
             } else if (is_vesc_tracking_valid(current_time)) {
                 current_position_degrees = get_vesc_fallback_position_degrees();
             } else {
@@ -853,14 +1080,18 @@ void main_process_control_logic(void) {
         }
         
         // Disarmed or no connection - send zero current command IMMEDIATELY for safety
-        // Send every time this function is called to ensure it overrides any position commands
+        // Send at a bounded rate to keep safety behavior while avoiding CAN TX queue flooding.
         wait_for_safe_can_slot();
         static uint32_t last_disarmed_debug = 0;
+        static uint32_t last_disarmed_current_cmd = 0;
         if (current_time - last_disarmed_debug > 2000) { // Debug every 2 seconds, but command every time
             DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED/NO_CONNECTION SAFETY]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
             last_disarmed_debug = current_time;
         }
-        comm_can_set_current(CAN_VESC_ID, 0.0f);  // Send 0A current EVERY time for maximum safety
+        if ((current_time - last_disarmed_current_cmd) >= 50) {
+            comm_can_set_current(CAN_VESC_ID, 0.0f);  // Send 0A current at 20 Hz in disarmed mode
+            last_disarmed_current_cmd = current_time;
+        }
     }
 }
 
@@ -967,7 +1198,7 @@ void app_main(void) {
              CAN_ESP32_ID, CAN_VESC_ID);
 
     // Initialize FRAM for persistent data storage
-    #ifdef FRAM_I2C_SDA_PIN
+    #if FRAM_ENABLE
     ESP_LOGI(TAG, "Initializing FRAM for encoder data storage...");
     fram_init_and_load_data();
     #else
@@ -1066,6 +1297,11 @@ void app_main(void) {
     #endif
 
     ESP_LOGI(TAG, "Encoder initialization phase completed");
+
+    // Reconcile restored FRAM angle reference after encoder startup to avoid multi-turn jumps.
+    #if FRAM_ENABLE
+    fram_reconcile_startup_encoder_reference();
+    #endif
 
     // Initialize CRSF receiver
     crsf_init(CRSF_UART_NUM, CRSF_TX_PIN, CRSF_RX_PIN, CRSF_BAUDRATE);

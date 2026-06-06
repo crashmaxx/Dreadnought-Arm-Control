@@ -10,8 +10,8 @@
 //#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
-//#define BOARD_LEFT_SHOULDER
-#define BOARD_RIGHT_SHOULDER
+#define BOARD_LEFT_SHOULDER
+//#define BOARD_RIGHT_SHOULDER
 //#define BOARD_LEFT_SHOULDER_DEMO
 //#define BOARD_CUSTOM
 
@@ -268,6 +268,13 @@
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 48.0f  // Motor to joint encoder reduction ratio
 
+  //FRAM configuration I2C pins
+  #define FRAM_ENABLE 1
+  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
+  #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
+
   // ESP-NOW telemetry configuration
   #define ESP_NOW_TELEMETRY_ENABLE 1
 
@@ -303,6 +310,13 @@
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 48.0f  // Motor to joint encoder reduction ratio
+
+  //FRAM configuration I2C pins
+  #define FRAM_ENABLE 1
+  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
+  #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
   // ESP-NOW telemetry configuration
   #define ESP_NOW_TELEMETRY_ENABLE 1
@@ -351,6 +365,7 @@
   // Note: Packet uses explicit channel_2 and channel_3 fields (maps to CRSF channels 2 and 3)
 
   //FRAM configuration I2C pins
+  #define FRAM_ENABLE 1
   #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
   #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
   #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
@@ -460,6 +475,11 @@
 #endif
 
 // FRAM I2C defaults (boards without FRAM still compile)
+#ifndef FRAM_ENABLE
+  #define FRAM_ENABLE 0
+#endif
+
+#if FRAM_ENABLE
 #ifndef FRAM_I2C_SDA_PIN
   #define FRAM_I2C_SDA_PIN 3
 #endif
@@ -474,6 +494,7 @@
 
 #ifndef FRAM_I2C_ADDRESS
   #define FRAM_I2C_ADDRESS 0x50
+#endif
 #endif
 
 

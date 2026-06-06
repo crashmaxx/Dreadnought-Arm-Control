@@ -7,6 +7,24 @@
 #include "freertos/task.h"
 #include <string.h>
 
+// Keep this translation unit buildable even when FRAM is disabled.
+// Runtime calls are gated by FRAM_ENABLE in main.c.
+#ifndef FRAM_I2C_SDA_PIN
+#define FRAM_I2C_SDA_PIN 3
+#endif
+
+#ifndef FRAM_I2C_SCL_PIN
+#define FRAM_I2C_SCL_PIN 4
+#endif
+
+#ifndef FRAM_I2C_FREQ_HZ
+#define FRAM_I2C_FREQ_HZ 400000
+#endif
+
+#ifndef FRAM_I2C_ADDRESS
+#define FRAM_I2C_ADDRESS 0x50
+#endif
+
 static const char *TAG = "FRAM_I2C";
 
 // I2C master configuration

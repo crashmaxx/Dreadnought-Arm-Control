@@ -279,7 +279,8 @@ static bool spi_encoder_is_valid_impl(void) {
     // Check for sensor diagnostic issues
     bool comp_ok = !AS504x_IS_COMP_HIGH(&spi_encoder_config) && !AS504x_IS_COMP_LOW(&spi_encoder_config);
     
-    // Debug validation failures periodically
+    // Debug validation details only when encoder debug is enabled.
+#if DEBUG_ENCODER_DATA
     static uint32_t debug_count = 0;
     debug_count++;
     if (debug_count % 100 == 1) {
@@ -288,6 +289,7 @@ static bool spi_encoder_is_valid_impl(void) {
         ESP_LOGW(TAG, "Time since last update: %lu us, error_count=%lu", 
                  current_time_us - last_update_time_us, error_count);
     }
+#endif
     
     return connected && recent_update && comp_ok;
 }
