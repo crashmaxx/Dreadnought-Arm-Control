@@ -272,9 +272,11 @@ float get_calibrated_encoder_angle_deg(void) {
     }
 }
 
+#if FRAM_ENABLE
 static float absf_local(float x) {
     return (x < 0.0f) ? -x : x;
 }
+#endif
 
 // Return angle adjusted by integer turns so it is closest to ref_deg.
 static float wrap_angle_near_reference(float angle_deg, float ref_deg) {
@@ -848,6 +850,19 @@ void crsf_control_task(void *pvParameters) {
     }
 }
 
+static float get_control_target_angle(void) {
+    float normalized_input = crsf_channel_to_normalized(CONTROL_CHANNEL);
+    #if MIXING_ENABLE
+    normalized_input += crsf_channel_to_normalized(MIXING_CHANNEL) * MIXING_MULTIPLIER;
+    #endif
+
+    if (normalized_input < -1.0f) normalized_input = -1.0f;
+    if (normalized_input > 1.0f) normalized_input = 1.0f;
+
+    normalized_input = (normalized_input + 1.0f) / 2.0f;
+    return MIN_ANGLE + (normalized_input * (MAX_ANGLE - MIN_ANGLE));
+}
+
 // Control function called from CAN Status 4 callback - executes position control logic
 // This is invoked by crsf_control_task when a NEW STATUS_4 frame is observed.
 // That keeps control synchronized with fresh VESC position data without running
@@ -918,11 +933,7 @@ void main_process_control_logic(void) {
 
         // Armed mode - send actual motor commands
         if (vesc_position_valid) {
-            // Convert CRSF channel to target angle (using board-configured control channel)
-            // CRSF channels are normalized -1.0 to +1.0, convert to 0.0 to 1.0, then to board-specific angle range
-            float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
-            float angle_range = MAX_ANGLE - MIN_ANGLE;
-            float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
+            float crsf_target_degrees = get_control_target_angle();
             
             // Get current position feedback - use encoder if valid, otherwise VESC fallback
             float current_position_degrees;
@@ -954,12 +965,11 @@ void main_process_control_logic(void) {
             // Calculate position error (CRSF target - current position)
             float position_error = crsf_target_degrees - current_position_degrees;
             
-            // Apply gear ratio compensation
-            float gear_compensated_error = position_error * GEAR_RATIO;
-            
+            // Apply gear ratio compensation, convert to revolutions
+            float gear_compensated_error = (position_error * GEAR_RATIO) / 360.0f;
+
             // Calculate new target position for VESC (in revolutions)
-            // vesc_current_position is already in revolutions, so convert degrees error to revolutions
-            float vesc_target_position_revolutions = vesc_current_position - (gear_compensated_error / 360.0f);
+            float vesc_target_position_revolutions = vesc_current_position - gear_compensated_error;
             
             // Send position command to VESC (wait for safe CAN slot to avoid collisions)
             wait_for_safe_can_slot();
@@ -1030,10 +1040,7 @@ void main_process_control_logic(void) {
 
         // Disarmed mode - show what position control would do for debugging
         if (vesc_position_valid) {
-            // Convert CRSF channel to target angle (using board-configured control channel)
-            float normalized_input = (crsf_channel_to_normalized(CONTROL_CHANNEL) + 1.0f) / 2.0f; // Convert -1..+1 to 0..1
-            float angle_range = MAX_ANGLE - MIN_ANGLE;
-            float crsf_target_degrees = MIN_ANGLE + (normalized_input * angle_range);
+            float crsf_target_degrees = get_control_target_angle();
             
             // Update encoder data first
             encoder_update();
