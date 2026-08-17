@@ -28,7 +28,7 @@
 
 // Hardware Configuration
 #define CRSF_UART_NUM               UART_NUM_1      // UART port number
-// Note: CRSF_TX_PIN and CRSF_RX_PIN are now defined in hardware-specific files (hw_*.h)
+// Note: CRSF_TX_PIN and CRSF_RX_PIN are now defined in board_config.h
 #define CRSF_BAUDRATE               420000          // Standard CRSF baud rate
 
 // Protocol Configuration

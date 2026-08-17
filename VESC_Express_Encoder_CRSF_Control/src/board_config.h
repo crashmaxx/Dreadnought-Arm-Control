@@ -6,12 +6,12 @@
 // =============================================================================
 //#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
-#define BOARD_LEFT_ELBOW
+//#define BOARD_LEFT_ELBOW
 //#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
 //#define BOARD_LEFT_SHOULDER
-//#define BOARD_RIGHT_SHOULDER
+#define BOARD_RIGHT_SHOULDER
 //#define BOARD_LEFT_SHOULDER_DEMO
 //#define BOARD_CUSTOM
 
@@ -51,6 +51,10 @@
   // CAN bus pins
   #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
   #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+
+  // CRSF pins
+  #define CRSF_TX_PIN 2
+  #define CRSF_RX_PIN 1
 
   // Control parameters
   #define CONTROL_CHANNEL 4
@@ -93,6 +97,10 @@
   #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
   #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
 
+  // CRSF pins
+  #define CRSF_TX_PIN 2
+  #define CRSF_RX_PIN 1
+
   // Control parameters
   #define CONTROL_CHANNEL 4
   #define REST_ANGLE 18.0f
@@ -126,6 +134,10 @@
   // CAN bus pins
   #define CAN_TX_GPIO_NUM 13      // CAN TX pin for ESP32-S3
   #define CAN_RX_GPIO_NUM 12      // CAN RX pin for ESP32-S3
+
+  // CRSF pins
+  #define CRSF_TX_PIN 2
+  #define CRSF_RX_PIN 1
 
   // Control parameters
   #define CONTROL_CHANNEL 3
@@ -171,6 +183,10 @@
   #define CAN_TX_GPIO_NUM 13      // CAN TX pin for ESP32-S3
   #define CAN_RX_GPIO_NUM 12      // CAN RX pin for ESP32-S3
 
+  // CRSF pins
+  #define CRSF_TX_PIN 2
+  #define CRSF_RX_PIN 1
+
   // Control parameters
   #define CONTROL_CHANNEL 3
   #define MIXING_ENABLE 1
@@ -207,6 +223,10 @@
   // CAN bus pins
   #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
   #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+
+  // CRSF pins
+  #define CRSF_TX_PIN 2
+  #define CRSF_RX_PIN 1
 
   // Control parameters
   #define CONTROL_CHANNEL 2
@@ -249,6 +269,10 @@
   #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
   #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
 
+  // CRSF pins
+  #define CRSF_TX_PIN 2
+  #define CRSF_RX_PIN 1
+
   // Control parameters
   #define CONTROL_CHANNEL 2
   #define REST_ANGLE 65.0f
@@ -269,10 +293,10 @@
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
 
   // SPI pins for magnetic encoder
-  #define ENCODER_SPI_CS_PIN 10    // Chip Select (Green)
-  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In (Red)
-  #define ENCODER_SPI_CLK_PIN 12   // Clock (Blue)
-  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out (Yellow)
+  #define ENCODER_SPI_MOSI_PIN 35  // Master Out Slave In (White)
+  #define ENCODER_SPI_CLK_PIN 36   // Clock (Blue)
+  #define ENCODER_SPI_MISO_PIN 37  // Master In Slave Out (Yellow)
+  #define ENCODER_SPI_CS_PIN 39    // Chip Select (Green)
   
   // SPI MOSI behavior configuration
   #define ENCODER_SPI_MOSI_ALWAYS_HIGH 0  // 0=normal SPI commands, 1=keep MOSI high
@@ -282,8 +306,12 @@
   #define CAN_ESP32_ID 1
   
   // CAN bus pins
-  #define CAN_TX_GPIO_NUM 8       // CAN TX pin for ESP32-S3
-  #define CAN_RX_GPIO_NUM 9       // CAN RX pin for ESP32-S3
+  #define CAN_TX_GPIO_NUM 10       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 11       // CAN RX pin for ESP32-S3
+
+  // CRSF pins
+  #define CRSF_TX_PIN 16
+  #define CRSF_RX_PIN 17
   
   // Control parameters
   #define CONTROL_CHANNEL 1
@@ -297,8 +325,8 @@
 
   //FRAM configuration I2C pins
   #define FRAM_ENABLE 1
-  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
-  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_I2C_SDA_PIN 8    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 9    // SCL pin for ESP32-S3
   #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
   #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
@@ -312,10 +340,10 @@
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
 
   // SPI pins for magnetic encoder
-  #define ENCODER_SPI_CS_PIN 10    // Chip Select (Green)
-  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In (Red)
-  #define ENCODER_SPI_CLK_PIN 12   // Clock (Blue)
-  #define ENCODER_SPI_MISO_PIN 13  // Master In Slave Out (Yellow)
+  #define ENCODER_SPI_MOSI_PIN 35  // Master Out Slave In (White)
+  #define ENCODER_SPI_CLK_PIN 36   // Clock (Blue)
+  #define ENCODER_SPI_MISO_PIN 37  // Master In Slave Out (Yellow)
+  #define ENCODER_SPI_CS_PIN 39    // Chip Select (Green)
   
   // SPI MOSI behavior configuration
   #define ENCODER_SPI_MOSI_ALWAYS_HIGH 0  // 0=normal SPI commands, 1=keep MOSI high
@@ -325,8 +353,12 @@
   #define CAN_ESP32_ID 1
 
   // CAN bus pins
-  #define CAN_TX_GPIO_NUM 8       // CAN TX pin for ESP32-S3
-  #define CAN_RX_GPIO_NUM 9       // CAN RX pin for ESP32-S3
+  #define CAN_TX_GPIO_NUM 10       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 11       // CAN RX pin for ESP32-S3
+
+  // CRSF pins
+  #define CRSF_TX_PIN 16
+  #define CRSF_RX_PIN 17
   
   // Control parameters
   #define CONTROL_CHANNEL 1
@@ -340,8 +372,8 @@
 
   //FRAM configuration I2C pins
   #define FRAM_ENABLE 1
-  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
-  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_I2C_SDA_PIN 8    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 9    // SCL pin for ESP32-S3
   #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
   #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
@@ -370,6 +402,10 @@
   // CAN bus pins
   #define CAN_TX_GPIO_NUM 8       // CAN TX pin for ESP32-S3
   #define CAN_RX_GPIO_NUM 9       // CAN RX pin for ESP32-S3
+
+  // CRSF pins
+  #define CRSF_TX_PIN 2
+  #define CRSF_RX_PIN 1
   
   // Control parameters
   #define CONTROL_CHANNEL 1
@@ -418,6 +454,10 @@
   // CAN bus pins
   #define CAN_TX_GPIO_NUM 4       // CAN TX pin for ESP32-S3
   #define CAN_RX_GPIO_NUM 5       // CAN RX pin for ESP32-S3
+
+  // CRSF pins
+  #define CRSF_TX_PIN 2
+  #define CRSF_RX_PIN 1
 
   // Custom control parameters
   #define CONTROL_CHANNEL 3
@@ -506,6 +546,15 @@
 
 #ifndef CAN_ESP32_ID
   #define CAN_ESP32_ID 1
+#endif
+
+// CRSF pin defaults
+#ifndef CRSF_TX_PIN
+  #define CRSF_TX_PIN 2
+#endif
+
+#ifndef CRSF_RX_PIN
+  #define CRSF_RX_PIN 2
 #endif
 
 // SPI MOSI behavior default
