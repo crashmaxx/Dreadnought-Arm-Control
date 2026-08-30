@@ -7,11 +7,11 @@
 //#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
 //#define BOARD_LEFT_ELBOW
-//#define BOARD_RIGHT_ELBOW
+#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
 //#define BOARD_LEFT_SHOULDER
-#define BOARD_RIGHT_SHOULDER
+//#define BOARD_RIGHT_SHOULDER
 //#define BOARD_LEFT_SHOULDER_DEMO
 //#define BOARD_CUSTOM
 
@@ -192,13 +192,20 @@
   #define MIXING_ENABLE 1
   #define MIXING_CHANNEL 2
   #define MIXING_MULTIPLIER -0.6675f
-  #define REST_ANGLE 65.0f
-  #define MIN_ANGLE 0.0f
-  #define MAX_ANGLE 359.0f
+  #define REST_ANGLE 0.0f
+  #define MIN_ANGLE -170.0f
+  #define MAX_ANGLE 230.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
+
+   //FRAM configuration I2C pins
+  #define FRAM_ENABLE 0
+  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
+  #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
   // ESP-NOW telemetry configuration
   #define ESP_NOW_TELEMETRY_ENABLE 1
@@ -282,6 +289,13 @@
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
+
+  //FRAM configuration I2C pins
+  #define FRAM_ENABLE 1
+  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
+  #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
   // ESP-NOW telemetry configuration
   #define ESP_NOW_TELEMETRY_ENABLE 1

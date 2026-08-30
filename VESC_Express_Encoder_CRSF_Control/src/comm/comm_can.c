@@ -102,6 +102,7 @@ static volatile int rx_recovery_cnt = 0;
 static void update_baud(CAN_BAUD baudrate);
 static esp_err_t start_twai_node(int pin_tx, int pin_rx);
 static void stop_twai_node(void);
+static void transmit_frame(const twai_frame_t *frame);
 
 static bool twai_rx_done_cb(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *user_ctx) {
 	(void)edata;
@@ -967,8 +968,7 @@ void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
 		return;
 	}
 
-	(void)twai_node_transmit(can_node_handle, &tx_msg, 20);
-	(void)twai_node_transmit_wait_all_done(can_node_handle, 20);
+	transmit_frame(&tx_msg);
 
 	xSemaphoreGive(send_mutex);
 }
@@ -998,10 +998,22 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 		return;
 	}
 
-	(void)twai_node_transmit(can_node_handle, &tx_msg, 20);
-	(void)twai_node_transmit_wait_all_done(can_node_handle, 20);
+	transmit_frame(&tx_msg);
 
 	xSemaphoreGive(send_mutex);
+}
+
+static void transmit_frame(const twai_frame_t *frame) {
+	const TickType_t timeout = pdMS_TO_TICKS(20);
+
+	// Do not add another frame while a previous frame is still awaiting an ACK.
+	if (twai_node_transmit_wait_all_done(can_node_handle, timeout) != ESP_OK) {
+		return;
+	}
+
+	if (twai_node_transmit(can_node_handle, frame, timeout) == ESP_OK) {
+		(void)twai_node_transmit_wait_all_done(can_node_handle, timeout);
+	}
 }
 
 /**
