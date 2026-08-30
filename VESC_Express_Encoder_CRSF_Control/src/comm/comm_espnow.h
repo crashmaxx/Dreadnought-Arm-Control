@@ -22,7 +22,7 @@
 #endif
 
 #define ESPNOW_QUEUE_SIZE           6
-#define CONFIG_ESPNOW_SEND_DELAY    1000
+#define CONFIG_ESPNOW_SEND_DELAY    100
 
 #define IS_BROADCAST_ADDR(addr) (memcmp(addr, s_telemetry_broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 

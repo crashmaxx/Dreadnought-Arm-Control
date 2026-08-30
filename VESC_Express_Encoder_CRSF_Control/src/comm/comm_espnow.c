@@ -122,6 +122,10 @@ esp_err_t espnow_wifi_init_station(uint8_t channel)
             return ret;
         }
 
+        // Power save can cause the radio to sleep between packets, silently dropping
+        // ESP-NOW frames. Disable it so telemetry/control packets are sent/received reliably.
+        ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+
         vTaskDelay(pdMS_TO_TICKS(100));
         wifi_initialized = true;
         ESP_LOGI(TAG, "WiFi initialized for ESP-NOW (Channel %u, Station Mode)", channel);
@@ -330,9 +334,9 @@ static void telemetry_espnow_task(void *pvParameter)
     ESP_LOGI(TAG, "Sending first ESP-NOW packet...");
     esp_err_t send_result = esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len);
     if (send_result != ESP_OK) {
-        ESP_LOGE(TAG, "ESP-NOW send failed: %s (%d)", esp_err_to_name(send_result), send_result);
-        telemetry_espnow_deinit(send_param);
-        vTaskDelete(NULL);
+        // Transient failure (e.g. peer not yet ready) - keep the task alive, the SEND_CB
+        // driven loop below will keep retrying on its own schedule.
+        ESP_LOGW(TAG, "ESP-NOW initial send failed: %s (%d), will keep retrying", esp_err_to_name(send_result), send_result);
     } else {
         ESP_LOGI(TAG, "ESP-NOW packet sent successfully");
     }
@@ -366,10 +370,11 @@ static void telemetry_espnow_task(void *pvParameter)
                 telemetry_espnow_data_prepare(send_param);
 
                 /* Send the next data after the previous data is sent. */
-                if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-                    ESP_LOGE(TAG, "Send error");
-                    telemetry_espnow_deinit(send_param);
-                    vTaskDelete(NULL);
+                esp_err_t next_send_result = esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len);
+                if (next_send_result != ESP_OK) {
+                    // Don't kill the task on a transient failure - that would permanently stop
+                    // telemetry until reboot. Just log and let the next SEND_CB drive a retry.
+                    ESP_LOGW(TAG, "ESP-NOW send error: %s (%d)", esp_err_to_name(next_send_result), next_send_result);
                 }
                 break;
             }

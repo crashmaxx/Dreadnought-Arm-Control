@@ -95,7 +95,7 @@ Successfully added missing CAN bus commands from the ElwinBoots/bldc repository 
 - **Current Control**: All current control commands working
 - **Status Monitoring**: Complete VESC status message parsing
 - **Fault Detection**: Comprehensive VESC fault monitoring and safety stops
-- **Real-time Operation**: 50Hz control loop with encoder feedback
+- **Real-time Operation**: 100Hz control loop with encoder feedback
 
 ### 🔄 Framework Ready - Extended Commands
 The following commands have complete parsing/transmission framework but need motor controller integration:
@@ -200,11 +200,19 @@ void position_control_loop(void) {
 - **Memory Usage**: RAM: 12.3%, Flash: 73.9% (plenty of headroom)
 
 ### Performance Metrics
-- **Control Loop**: 50Hz position control with encoder feedback
+- **Control Loop**: 100Hz position control with encoder feedback
 - **CAN Bus**: 500kbps with automatic status monitoring
 - **Response Time**: <20ms from CRSF input to motor command
 - **Precision**: Floating-point position commands (high precision)
 - **Stability**: Stack overflow issues resolved, stable operation
+
+### VESC CAN Status Message Configuration
+Control logic in `main.c` runs once per new `STATUS_4` frame, so the VESC's status
+broadcast rate directly gates the effective control rate (`min(100Hz task rate, VESC status rate)`):
+- **Status rate**: 100Hz (matches `CRSF_CONTROL_UPDATE_RATE_HZ` / `CONTROL_TASK_DELAY_MS`)
+- **Enabled messages**: Status 1 (rpm/current/duty) and Status 4 (temps/current_in/pid_pos_now)
+- **Disabled messages**: Status 2, 3, 5, 6 - decoded and stored by `comm_can.c` but never read
+  by application code, so they're left off to reduce CAN bus load
 
 ### Protocol Compatibility
 This implementation maintains **full backward compatibility** with existing VESC CAN commands while adding the extended functionality from the ElwinBoots/bldc repository. The system can communicate with any VESC controller using either the standard or extended CAN protocol.
