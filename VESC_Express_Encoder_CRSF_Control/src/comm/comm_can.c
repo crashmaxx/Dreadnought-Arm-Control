@@ -97,6 +97,7 @@ static volatile int rx_read = 0;
 static volatile bool use_vesc_decoder = true;
 
 static volatile int rx_recovery_cnt = 0;
+static volatile int tx_drop_cnt = 0;
 
 // Private functions
 static void update_baud(CAN_BAUD baudrate);
@@ -734,7 +735,8 @@ static esp_err_t start_twai_node(int pin_tx, int pin_rx) {
 	node_config.io_cfg.quanta_clk_out = -1;
 	node_config.io_cfg.bus_off_indicator = -1;
 	node_config.bit_timing.bitrate = can_bitrate;
-	node_config.tx_queue_depth = 20;
+	// Only 1 frame is ever in flight (transmit_frame waits before each submit), so depth just needs headroom.
+	node_config.tx_queue_depth = 2;
 	// Avoid permanent TX queue saturation when ACKs are temporarily missing.
 	// Infinite retries (-1) can hold queue slots forever and trigger repeated "tx queue full" logs.
 	node_config.fail_retry_cnt = 2;
@@ -863,6 +865,10 @@ void comm_can_stop(void) {
 
 int comm_can_get_rx_recovery_cnt(void) {
 	return rx_recovery_cnt;
+}
+
+int comm_can_get_tx_drop_cnt(void) {
+	return tx_drop_cnt;
 }
 
 void comm_can_use_vesc_decoder(bool use_vesc_dec) {
@@ -1006,13 +1012,23 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 static void transmit_frame(const twai_frame_t *frame) {
 	const TickType_t timeout = pdMS_TO_TICKS(20);
 
+	// Skip the wait entirely while the bus is off, instead of stalling every call for the full timeout.
+	twai_node_status_t status;
+	if (twai_node_get_info(can_node_handle, &status, NULL) == ESP_OK && status.state == TWAI_ERROR_BUS_OFF) {
+		tx_drop_cnt++;
+		return;
+	}
+
 	// Do not add another frame while a previous frame is still awaiting an ACK.
 	if (twai_node_transmit_wait_all_done(can_node_handle, timeout) != ESP_OK) {
+		tx_drop_cnt++;
 		return;
 	}
 
 	if (twai_node_transmit(can_node_handle, frame, timeout) == ESP_OK) {
 		(void)twai_node_transmit_wait_all_done(can_node_handle, timeout);
+	} else {
+		tx_drop_cnt++;
 	}
 }
 

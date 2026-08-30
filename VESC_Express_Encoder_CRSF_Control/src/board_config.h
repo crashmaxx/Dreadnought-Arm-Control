@@ -7,9 +7,9 @@
 //#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
 //#define BOARD_LEFT_ELBOW
-#define BOARD_RIGHT_ELBOW
+//#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
-//#define BOARD_RIGHT_UPPER
+#define BOARD_RIGHT_UPPER
 //#define BOARD_LEFT_SHOULDER
 //#define BOARD_RIGHT_SHOULDER
 //#define BOARD_LEFT_SHOULDER_DEMO
@@ -260,10 +260,10 @@
 #ifdef BOARD_RIGHT_UPPER
   #define BOARD_NAME "Right_Upper"
   #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
-  #define ENCODER_A_PIN 7       // CS (Blue)
-  #define ENCODER_B_PIN 6       // MOSI (Yellow)
-  #define ENCODER_PWM_PIN 5     // MISO (White)
-  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
+  #define ENCODER_A_PIN 12       // CS (Blue)
+  #define ENCODER_B_PIN 13       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 11     // MISO (White)
+  // #define ENCODER_I_PIN 10   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -273,8 +273,8 @@
   #define CAN_ESP32_ID 2
 
     // CAN bus pins
-  #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
-  #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+  #define CAN_TX_GPIO_NUM 8       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 9       // CAN RX pin for ESP32-S3
 
   // CRSF pins
   #define CRSF_TX_PIN 2
