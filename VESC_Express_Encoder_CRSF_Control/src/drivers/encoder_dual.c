@@ -61,6 +61,11 @@ extern const encoder_interface_t quad_encoder_interface;
 // Initialize dual hybrid encoder by initializing both sub-encoders
 static bool dual_encoder_init(void) {
     ESP_LOGI(TAG, "Initializing dual hybrid encoder (PWM + Quadrature)");
+    #if FRAM_ENABLE
+    ESP_LOGI(TAG, "Dual hybrid mode: FRAM enabled - using quadrature tracking with PWM absolute reference for startup recovery");
+    #else
+    ESP_LOGW(TAG, "Dual hybrid mode: FRAM disabled - PWM is the preferred absolute reference; quadrature remains only for motion tracking");
+    #endif
     
     // Initialize PWM encoder
     bool pwm_init_ok = pwm_encoder_interface.init();

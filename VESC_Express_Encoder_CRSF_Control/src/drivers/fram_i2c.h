@@ -6,11 +6,13 @@
 #include "esp_err.h"
 
 // FRAM memory addresses for different data types
-#define FRAM_ADDR_ENCODER_ANGLE     0x0000  // Float (4 bytes) - Current encoder angle
-#define FRAM_ADDR_CALIBRATION_OFFSET 0x0004  // Float (4 bytes) - Calibration offset
-#define FRAM_ADDR_CALIBRATED_FLAG   0x0008  // Bool (1 byte) - Calibration status
-#define FRAM_ADDR_BOOT_COUNT        0x0009  // uint32_t (4 bytes) - Boot counter
-#define FRAM_ADDR_TIMESTAMP         0x000D  // uint32_t (4 bytes) - Last save timestamp
+#define FRAM_ADDR_ENCODER_ANGLE         0x0000  // Float (4 bytes) - Current encoder angle
+#define FRAM_ADDR_CALIBRATION_OFFSET    0x0004  // Float (4 bytes) - Calibration offset
+#define FRAM_ADDR_CALIBRATED_FLAG       0x0008  // Bool (1 byte) - Calibration status
+#define FRAM_ADDR_BOOT_COUNT            0x0009  // uint32_t (4 bytes) - Boot counter
+#define FRAM_ADDR_TIMESTAMP             0x000D  // uint32_t (4 bytes) - Last save timestamp
+#define FRAM_ADDR_PWM_CALIBRATION_ANGLE 0x0010  // Float (4 bytes) - PWM reading at last calibration
+#define FRAM_ADDR_REST_ANGLE            0x0014  // Float (4 bytes) - Rest angle saved at calibration
 
 // ESP-NOW remote data addresses (starting at 0x0020 to avoid conflicts)
 #define FRAM_ADDR_REMOTE_ANGLE_CH2   0x0020  // Float (4 bytes) - Remote upper arm angle (channel 2)
@@ -24,6 +26,8 @@
 typedef struct {
     float current_angle;
     float calibration_offset;
+    float pwm_calibration_angle;
+    float rest_angle;
     bool calibrated;
     uint32_t boot_count;
     uint32_t last_save_time;

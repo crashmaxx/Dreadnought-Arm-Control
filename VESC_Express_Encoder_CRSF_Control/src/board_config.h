@@ -58,9 +58,9 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 4
-  #define REST_ANGLE -5.0f
-  #define MIN_ANGLE -300.0f
-  #define MAX_ANGLE 0.0f
+  #define REST_ANGLE 145.0f
+  #define MIN_ANGLE -150.0f
+  #define MAX_ANGLE 150.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -103,9 +103,9 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 4
-  #define REST_ANGLE 18.0f
-  #define MIN_ANGLE 0.0f
-  #define MAX_ANGLE 359.0f
+  #define REST_ANGLE 145.0f
+  #define MIN_ANGLE -150.0f
+  #define MAX_ANGLE 150.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -144,9 +144,9 @@
   #define MIXING_ENABLE 1
   #define MIXING_CHANNEL 2
   #define MIXING_MULTIPLIER -0.6675f
-  #define REST_ANGLE 0.0f
-  #define MIN_ANGLE -170.0f
-  #define MAX_ANGLE 230.0f
+  #define REST_ANGLE 30.0f
+  #define MIN_ANGLE -200.0f
+  #define MAX_ANGLE 200.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -192,8 +192,8 @@
   #define MIXING_ENABLE 1
   #define MIXING_CHANNEL 2
   #define MIXING_MULTIPLIER -0.6675f
-  #define REST_ANGLE 0.0f
-  #define MIN_ANGLE -170.0f
+  #define REST_ANGLE 40.0f
+  #define MIN_ANGLE -230.0f
   #define MAX_ANGLE 230.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
@@ -237,9 +237,9 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 2
-  #define REST_ANGLE 0.0f
-  #define MIN_ANGLE -86.0f
-  #define MAX_ANGLE 181.0f
+  #define REST_ANGLE 50.0f
+  #define MIN_ANGLE -130.0f
+  #define MAX_ANGLE 130.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -259,7 +259,7 @@
 
 #ifdef BOARD_RIGHT_UPPER
   #define BOARD_NAME "Right_Upper"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
+  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
   #define ENCODER_A_PIN 12       // CS (Blue)
   #define ENCODER_B_PIN 13       // MOSI (Yellow)
   #define ENCODER_PWM_PIN 11     // MISO (White)
@@ -282,9 +282,9 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 2
-  #define REST_ANGLE 0.0f
-  #define MIN_ANGLE -150.0f
-  #define MAX_ANGLE 110.0f
+  #define REST_ANGLE 50.0f
+  #define MIN_ANGLE -130.0f
+  #define MAX_ANGLE 130.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -329,9 +329,9 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
-  #define REST_ANGLE 345.0f
-  #define MIN_ANGLE 320.0f
-  #define MAX_ANGLE 420.0f
+  #define REST_ANGLE -25.0f
+  #define MIN_ANGLE -50.0f
+  #define MAX_ANGLE 50.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -376,9 +376,9 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
-  #define REST_ANGLE 95.0f
-  #define MIN_ANGLE 50.0f
-  #define MAX_ANGLE 180.0f
+  #define REST_ANGLE -20.0f
+  #define MIN_ANGLE -65.0f
+  #define MAX_ANGLE 65.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -423,9 +423,9 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
-  #define REST_ANGLE 345.0f
-  #define MIN_ANGLE 320.0f
-  #define MAX_ANGLE 420.0f
+  #define REST_ANGLE -25.0f
+  #define MIN_ANGLE -50.0f
+  #define MAX_ANGLE 50.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -475,9 +475,9 @@
 
   // Custom control parameters
   #define CONTROL_CHANNEL 3
-  #define REST_ANGLE 30.0f
-  #define MIN_ANGLE 0.0f
-  #define MAX_ANGLE 359.0f
+  #define REST_ANGLE 0.0f
+  #define MIN_ANGLE -180.0f
+  #define MAX_ANGLE 180.0f
   #define MAX_VEL 1000.0f   // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -514,11 +514,11 @@
 
 // Default control parameters
 #ifndef MIN_ANGLE
-  #define MIN_ANGLE 0.0f
+  #define MIN_ANGLE -90.0f
 #endif
 
 #ifndef MAX_ANGLE
-  #define MAX_ANGLE 359.0f
+  #define MAX_ANGLE 90.0f
 #endif
 
 #ifndef CONTROL_CHANNEL
@@ -568,7 +568,7 @@
 #endif
 
 #ifndef CRSF_RX_PIN
-  #define CRSF_RX_PIN 2
+  #define CRSF_RX_PIN 3
 #endif
 
 // SPI MOSI behavior default

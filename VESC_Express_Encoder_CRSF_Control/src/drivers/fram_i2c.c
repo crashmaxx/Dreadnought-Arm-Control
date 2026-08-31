@@ -251,6 +251,19 @@ esp_err_t fram_save_encoder_data(const fram_encoder_data_t *encoder_data) {
         return ret;
     }
 
+    // Save PWM calibration angle and rest angle for hybrid encoders
+    ret = fram_write_float(FRAM_ADDR_PWM_CALIBRATION_ANGLE, encoder_data->pwm_calibration_angle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save PWM calibration angle: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = fram_write_float(FRAM_ADDR_REST_ANGLE, encoder_data->rest_angle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save rest angle: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     // Save calibration flag
     ret = fram_write_byte(FRAM_ADDR_CALIBRATED_FLAG, encoder_data->calibrated ? 1 : 0);
     if (ret != ESP_OK) {
@@ -298,6 +311,19 @@ esp_err_t fram_load_encoder_data(fram_encoder_data_t *encoder_data) {
     ret = fram_read_float(FRAM_ADDR_CALIBRATION_OFFSET, &encoder_data->calibration_offset);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to load calibration offset: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Load hybrid calibration metadata
+    ret = fram_read_float(FRAM_ADDR_PWM_CALIBRATION_ANGLE, &encoder_data->pwm_calibration_angle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load PWM calibration angle: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = fram_read_float(FRAM_ADDR_REST_ANGLE, &encoder_data->rest_angle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load rest angle: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -371,6 +397,8 @@ esp_err_t fram_clear_encoder_data(void) {
     fram_encoder_data_t clear_data = {
         .current_angle = 0.0f,
         .calibration_offset = 0.0f,
+        .pwm_calibration_angle = 0.0f,
+        .rest_angle = 0.0f,
         .calibrated = false,
         .boot_count = 0,
         .last_save_time = 0

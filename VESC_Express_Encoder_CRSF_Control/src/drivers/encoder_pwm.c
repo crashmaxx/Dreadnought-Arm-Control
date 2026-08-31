@@ -22,7 +22,6 @@
 #if ENCODER_TYPE == ENCODER_TYPE_PWM_MAGNETIC || ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
 
 #include "driver/gpio.h"
-#include "driver/mcpwm.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"

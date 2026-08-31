@@ -129,6 +129,7 @@ static bool vesc_config_sent = false;
 
 // Forward declarations
 void wait_for_safe_can_slot(void);
+static float get_control_target_angle(void);
 
 #if DEBUG_ESPNOW_TEST
 // ESP-NOW test function - sends random telemetry data for testing
@@ -272,11 +273,9 @@ float get_calibrated_encoder_angle_deg(void) {
     }
 }
 
-#if FRAM_ENABLE
 static float absf_local(float x) {
     return (x < 0.0f) ? -x : x;
 }
-#endif
 
 // Return angle adjusted by integer turns so it is closest to ref_deg.
 static float wrap_angle_near_reference(float angle_deg, float ref_deg) {
@@ -289,17 +288,90 @@ static float wrap_angle_near_reference(float angle_deg, float ref_deg) {
     return angle_deg;
 }
 
+static float hybrid_select_nearest_turn(float pwm_angle_deg, float saved_last_angle_deg, float saved_pwm_angle_deg, float saved_rest_angle_deg) {
+    // PWM is only used as the absolute bootstrap reference before calibration.
+    // Once the encoder has been calibrated and initialized, quadrature becomes the authority.
+    float rest_offset_deg = saved_rest_angle_deg - saved_pwm_angle_deg;
+    float pwm_reference_deg = pwm_angle_deg + rest_offset_deg;
+
+    // When the joint was moved while powered down, the last saved angle may be stale but the
+    // saved rest position is still the correct anchor for the zero-crossing decision. Prefer the
+    // candidate closest to the saved rest angle when the options are otherwise nearly tied.
+    float best_angle = pwm_reference_deg;
+    float best_err = absf_local(pwm_reference_deg - saved_last_angle_deg);
+    float best_rest_err = absf_local(pwm_reference_deg - saved_rest_angle_deg);
+
+    for (int k = -3; k <= 3; k++) {
+        float candidate = pwm_reference_deg + (360.0f * (float)k);
+        float err = absf_local(candidate - saved_last_angle_deg);
+        float rest_err = absf_local(candidate - saved_rest_angle_deg);
+
+        // Prefer the candidate with the smallest error to the last saved position.
+        // If two turns are almost identical, choose the branch that stays closest to the saved rest angle.
+        // This prevents +50° from being flipped to -50° right at a zero crossing.
+        if (err < best_err - 0.25f || (fabsf(err - best_err) <= 0.25f && rest_err < best_rest_err)) {
+            best_err = err;
+            best_rest_err = rest_err;
+            best_angle = candidate;
+        }
+    }
+
+    // If the last saved angle was already near the rest angle, lock to the rest-angle branch to
+    // prevent a small manual move while off from choosing the wrong sign on startup.
+    if (absf_local(saved_last_angle_deg - saved_rest_angle_deg) <= 45.0f) {
+        float rest_branch = saved_rest_angle_deg + wrap_angle_near_reference(pwm_reference_deg - saved_rest_angle_deg, 0.0f);
+        float rest_branch_err = absf_local(rest_branch - saved_last_angle_deg);
+        if (rest_branch_err <= best_err) {
+            return rest_branch;
+        }
+    }
+
+    return best_angle;
+}
+
 // Reconcile restored calibration offset with the current raw encoder reading.
 // This preserves angle continuity across reboot by selecting the nearest turn-equivalent offset.
 void fram_reconcile_startup_encoder_reference(void) {
 #if FRAM_ENABLE
-    if (!fram_initialized || !fram_data.calibrated || !encoder_calibrated) {
+    if (!fram_initialized) {
         return;
     }
 
     encoder_update();
     if (!encoder_is_valid()) {
         ESP_LOGW(TAG, "FRAM: Startup reconcile skipped (encoder invalid)");
+        return;
+    }
+
+    #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
+    // PWM is used only as a boot-time absolute anchor when quadrature has been reset or not yet calibrated.
+    // Once calibration has been established, quadrature is the authoritative tracking source.
+    if (!encoder_calibrated) {
+        if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
+            float pwm_now = pwm_encoder_interface.get_angle_deg();
+            float saved_last_angle = fram_data.current_angle;
+            float saved_pwm_angle = fram_data.pwm_calibration_angle;
+            float saved_rest_angle = fram_data.rest_angle;
+            bool has_saved_reference = (saved_last_angle != 0.0f || saved_pwm_angle != 0.0f || saved_rest_angle != 0.0f || fram_data.calibrated);
+
+            if (has_saved_reference) {
+                float candidate_angle = hybrid_select_nearest_turn(pwm_now, saved_last_angle, saved_pwm_angle, saved_rest_angle);
+                float raw_now = encoder_get_angle_deg();
+                encoder_calibration_offset = candidate_angle - raw_now;
+                encoder_calibrated = true;
+                fram_data.current_angle = candidate_angle;
+                fram_data.calibration_offset = encoder_calibration_offset;
+                fram_data.rest_angle = saved_rest_angle;
+                fram_data.pwm_calibration_angle = saved_pwm_angle;
+
+                ESP_LOGI(TAG, "FRAM: Hybrid startup restore used PWM %.1f° with rest offset %.1f°; selected nearest valid turn to saved %.1f° => %.1f°",
+                         pwm_now, (saved_rest_angle - saved_pwm_angle), saved_last_angle, candidate_angle);
+            }
+        }
+    }
+    #endif
+
+    if (!fram_data.calibrated || !encoder_calibrated) {
         return;
     }
 
@@ -418,6 +490,17 @@ void fram_save_current_encoder_data(uint32_t current_time) {
     }
     fram_data.calibration_offset = encoder_calibration_offset;
     fram_data.calibrated = encoder_calibrated;
+
+    #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
+    if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
+        fram_data.pwm_calibration_angle = pwm_encoder_interface.get_angle_deg();
+    }
+    fram_data.rest_angle = REST_ANGLE;
+    #else
+    fram_data.pwm_calibration_angle = 0.0f;
+    fram_data.rest_angle = REST_ANGLE;
+    #endif
+
     fram_data.last_save_time = current_time;
 
     // Save to FRAM
@@ -622,6 +705,9 @@ void crsf_control_task(void *pvParameters) {
     static uint32_t last_status4_rx_log = 0;
     static uint32_t last_ping_ok_log = 0;
     static TickType_t last_status4_rx_tick = 0;
+    #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
+    static uint32_t last_telemetry_update = 0;
+    #endif
 
     ESP_LOGI(TAG, "CRSF control task started");
 
@@ -731,6 +817,17 @@ void crsf_control_task(void *pvParameters) {
             
             last_encoder_print = current_time;
         }
+
+        #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST
+        if ((current_time - last_telemetry_update) >= 100) {
+            encoder_update();
+            float encoder_degrees = get_calibrated_encoder_angle_deg();
+            float crsf_target_degrees = crsf_is_connected() ? get_control_target_angle() : 0.0f;
+            float vesc_target_revolutions = vesc_position_valid ? vesc_current_position : 0.0f;
+            telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
+            last_telemetry_update = current_time;
+        }
+        #endif
         
         // CRSF failsafe should depend on connection state, not whether a new frame
         // happened to arrive this exact control tick.
@@ -756,10 +853,9 @@ void crsf_control_task(void *pvParameters) {
                 }
                 #endif
 
-                // Channel 6 calibration - sets encoder zero position to REST_ANGLE when activated
-                // SAFETY: Only allow calibration when CRSF connected, VESC connected, but system DISARMED
+                // Channel 6 calibration - sets encoder zero position to REST_ANGLE when activated.
                 bool channel6_high = (channels[CRSF_CHANNEL_AUX2 - 1] > 1700);  // Channel 6 = AUX2 (high position)
-                if (!crsf_is_armed() && vesc_position_valid && channel6_high && !last_channel6_state) {
+                if (!crsf_is_armed() && channel6_high && !last_channel6_state) {
                     // Channel 6 transitioned from low to high - trigger calibration
                     // Rate limit calibration to prevent accidental repeated triggers
                     if (current_time - last_calibration_time > 2000) {  // Rate limit to once per 2 seconds
@@ -771,8 +867,17 @@ void crsf_control_task(void *pvParameters) {
                         if (encoder_is_valid()) {
                             // Calculate offset so current encoder reading equals REST_ANGLE
                             float current_raw_angle = encoder_get_angle_deg();
+                            #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
+                            if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
+                                fram_data.pwm_calibration_angle = pwm_encoder_interface.get_angle_deg();
+                                fram_data.rest_angle = REST_ANGLE;
+                                ESP_LOGI(TAG, "[CALIBRATION] Hybrid calibration saved PWM angle %.1f° and rest angle %.1f°",
+                                        fram_data.pwm_calibration_angle, fram_data.rest_angle);
+                            }
+                            #endif
                             encoder_calibration_offset = REST_ANGLE - current_raw_angle;
                             encoder_calibrated = true;
+                            startup_pid_offset_sync_pending = true;
 
                             ESP_LOGI(TAG, "[CALIBRATION] Encoder calibrated: Raw=%.1f°, Offset=%.1f°, Calibrated=%.1f°",
                                     current_raw_angle, encoder_calibration_offset, REST_ANGLE);
@@ -1287,6 +1392,22 @@ void app_main(void) {
                  encoder_is_valid() ? "YES" : "NO", encoder_get_angle_deg());
     } else {
         ESP_LOGE(TAG, "Failed to initialize quadrature encoder system");
+        return;
+    }
+
+    #elif ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
+    ESP_LOGI(TAG, "Encoder config - Type: DUAL_HYBRID (PWM + QUADRATURE)");
+    ESP_LOGI(TAG, "PWM pin: GPIO%d, Quad pins - A: GPIO%d, B: GPIO%d, PPR: %d",
+             ENCODER_PWM_PIN, ENCODER_A_PIN, ENCODER_B_PIN, ENCODER_PPR);
+
+    if (encoder_init()) {
+        ESP_LOGI(TAG, "Dual hybrid encoder system initialized successfully");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        encoder_update();
+        DEBUG_ENC("Dual Hybrid Encoder init: Valid=%s, Initial angle=%.2f°",
+                 encoder_is_valid() ? "YES" : "NO", encoder_get_angle_deg());
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize dual hybrid encoder system");
         return;
     }
     

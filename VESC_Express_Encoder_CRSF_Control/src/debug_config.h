@@ -16,7 +16,7 @@
 #define DEBUG_ESPNOW_TELEMETRY      0  // ESP-NOW telemetry debugging
 #define DEBUG_ESPNOW_TEST           0  // Send random test data to ESP-NOW telemetry
 #define DEBUG_VERBOSE               0  // Verbose SPI encoder and diagnostics debugging
-#define DEBUG_INIT_COUNTDOWN        0  // Enable 30 second sensor initialization countdown
+#define DEBUG_INIT_COUNTDOWN        1  // Enable 30 second sensor initialization countdown
 #define DEBUG_FRAM_I2C              1  // FRAM I2C communication debugging
 
 // =============================================================================
