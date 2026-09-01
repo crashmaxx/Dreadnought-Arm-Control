@@ -1,0 +1,82 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"C:/Users/andre/.platformio/packages/framework-espidf/components/mbedtls/mbedtls/library/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 251,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 251,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 279,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"esp-idf/mbedtls/mbedtls/library/libmbedx509.a"
+			],
+			"targetId" : "mbedx509::@12759e2a35724d846b97",
+			"targetIndex" : 141,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"esp-idf/mbedtls/mbedtls/library/libmbedtls.a"
+			],
+			"targetId" : "mbedtls::@12759e2a35724d846b97",
+			"targetIndex" : 139,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				{
+					"from" : ".pio/build/esp32-s3-devkitc-1/esp-idf/mbedtls/mbedtls/tf-psa-crypto/core/libtfpsacrypto.a",
+					"to" : "libmbedcrypto.a"
+				}
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "esp-idf/mbedtls/mbedtls/library",
+		"source" : "C:/Users/andre/.platformio/packages/framework-espidf/components/mbedtls/mbedtls/library"
+	}
+}

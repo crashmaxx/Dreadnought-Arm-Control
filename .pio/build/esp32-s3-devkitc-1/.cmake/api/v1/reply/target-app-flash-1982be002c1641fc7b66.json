@@ -1,0 +1,88 @@
+{
+	"backtrace" : 6,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_custom_target",
+			"esptool_py_flash_target",
+			"esptool_py_custom_target",
+			"__idf_build_setup_flash_targets",
+			"idf_build_executable",
+			"project",
+			"add_dependencies"
+		],
+		"files" : 
+		[
+			"C:/Users/andre/.platformio/packages/framework-espidf/components/esptool_py/project_include.cmake",
+			"C:/Users/andre/.platformio/packages/framework-espidf/tools/cmake/flash_targets.cmake",
+			"C:/Users/andre/.platformio/packages/framework-espidf/tools/cmake/build.cmake",
+			"C:/Users/andre/.platformio/packages/framework-espidf/tools/cmake/project.cmake",
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 4
+			},
+			{
+				"command" : 5,
+				"file" : 4,
+				"line" : 3,
+				"parent" : 0
+			},
+			{
+				"command" : 4,
+				"file" : 3,
+				"line" : 1004,
+				"parent" : 1
+			},
+			{
+				"command" : 3,
+				"file" : 2,
+				"line" : 881,
+				"parent" : 2
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 3
+			},
+			{
+				"command" : 1,
+				"file" : 0,
+				"line" : 333,
+				"parent" : 4
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 192,
+				"parent" : 5
+			},
+			{
+				"command" : 6,
+				"file" : 0,
+				"line" : 341,
+				"parent" : 4
+			}
+		]
+	},
+	"dependencies" : 
+	[
+		{
+			"backtrace" : 7,
+			"id" : "app::@6890427a1f51a3e7e1df"
+		}
+	],
+	"id" : "app-flash::@6890427a1f51a3e7e1df",
+	"name" : "app-flash",
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	},
+	"sources" : [],
+	"type" : "UTILITY"
+}

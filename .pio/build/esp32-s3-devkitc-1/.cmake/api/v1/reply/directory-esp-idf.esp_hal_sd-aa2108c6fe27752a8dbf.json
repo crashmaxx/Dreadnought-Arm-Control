@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "esp-idf/esp_hal_sd",
+		"source" : "C:/Users/andre/.platformio/packages/framework-espidf/components/esp_hal_sd"
+	}
+}
