@@ -48,7 +48,7 @@ typedef struct {
 static pwm_encoder_state_t pwm_state = {0};
 
 // PWM capture configuration
-#define PWM_TIMEOUT_US 200000  // 200ms timeout (increased for stability)
+#define PWM_TIMEOUT_US 600000  // Allow the constant-low 0° detector to establish a valid reading.
 #define PWM_MIN_PULSE_US 1     // Minimum 1μs pulse to filter noise (even though encoder can go to 0)
 #define PWM_MAX_PULSE_US ENCODER_PWM_MAX_US   // Use board config maximum
 #define VELOCITY_FILTER_ALPHA 0.1f  // Low-pass filter for velocity
@@ -143,16 +143,12 @@ static bool pwm_encoder_init(void) {
 static bool pwm_encoder_update(void) {
     uint32_t current_time_us = esp_timer_get_time();
     
-    // Timeout function DISABLED - user prefers readings over timeout errors
-    // Once we have a valid reading, we keep it until a new one arrives
-    /*
     if (pwm_state.valid && (current_time_us - pwm_state.timestamp_us) > PWM_TIMEOUT_US) {
         pwm_state.valid = false;
         pwm_state.timeout_count++;
         ESP_LOGW(TAG, "PWM encoder timeout (count: %lu, last pulse: %lu μs ago)", 
                 pwm_state.timeout_count, (current_time_us - pwm_state.timestamp_us));
     }
-    */
     
     // Special case: Check if GPIO is constantly low (0V = 0 degrees)
     // Re-enabled with very conservative settings to detect true 0V only

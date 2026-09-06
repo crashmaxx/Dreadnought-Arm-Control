@@ -113,6 +113,7 @@ static bool fram_initialized = false;
 
 // Startup alignment state
 static bool was_armed_last_cycle = false;
+static bool startup_encoder_reference_reconciled = false;
 static bool startup_pid_offset_sync_pending = false;
 static uint32_t arm_transition_hold_until_ms = 0;
 static bool startup_pid_offset_sync_waiting_status4 = false;
@@ -334,6 +335,12 @@ static float hybrid_select_nearest_turn(float pwm_angle_deg, float saved_last_an
 void fram_reconcile_startup_encoder_reference(void) {
 #if FRAM_ENABLE
     if (!fram_initialized) {
+        startup_encoder_reference_reconciled = true;
+        return;
+    }
+
+    if (!fram_data.calibrated) {
+        startup_encoder_reference_reconciled = true;
         return;
     }
 
@@ -344,36 +351,35 @@ void fram_reconcile_startup_encoder_reference(void) {
     }
 
     #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
-    // PWM is used only as a boot-time absolute anchor when quadrature has been reset or not yet calibrated.
-    // Once calibration has been established, quadrature is the authoritative tracking source.
-    if (!encoder_calibrated) {
+    // PWM is the boot-time absolute anchor; quadrature resumes as the tracking source after alignment.
+    if (fram_data.calibrated) {
         if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
             float pwm_now = pwm_encoder_interface.get_angle_deg();
             float saved_last_angle = fram_data.current_angle;
             float saved_pwm_angle = fram_data.pwm_calibration_angle;
             float saved_rest_angle = fram_data.rest_angle;
-            bool has_saved_reference = (saved_last_angle != 0.0f || saved_pwm_angle != 0.0f || saved_rest_angle != 0.0f || fram_data.calibrated);
 
-            if (has_saved_reference) {
-                float candidate_angle = hybrid_select_nearest_turn(pwm_now, saved_last_angle, saved_pwm_angle, saved_rest_angle);
-                float raw_now = encoder_get_angle_deg();
-                encoder_calibration_offset = candidate_angle - raw_now;
+            float candidate_angle = hybrid_select_nearest_turn(pwm_now, saved_last_angle, saved_pwm_angle, saved_rest_angle);
+            if (encoder_set_zero_position(candidate_angle)) {
+                encoder_update();
+                encoder_calibration_offset = 0.0f;
                 encoder_calibrated = true;
                 fram_data.current_angle = candidate_angle;
-                fram_data.calibration_offset = encoder_calibration_offset;
-                fram_data.rest_angle = saved_rest_angle;
-                fram_data.pwm_calibration_angle = saved_pwm_angle;
+                fram_data.calibration_offset = 0.0f;
 
-                ESP_LOGI(TAG, "FRAM: Hybrid startup restore used PWM %.1f° with rest offset %.1f°; selected nearest valid turn to saved %.1f° => %.1f°",
+                ESP_LOGI(TAG, "FRAM: Hybrid startup restore used PWM %.1f° with rest offset %.1f°; aligned quadrature to saved %.1f° => %.1f°",
                          pwm_now, (saved_rest_angle - saved_pwm_angle), saved_last_angle, candidate_angle);
             }
         }
     }
     #endif
 
-    if (!fram_data.calibrated || !encoder_calibrated) {
+    if (!fram_data.calibrated) {
         return;
     }
+
+    encoder_calibrated = true;
+    encoder_calibration_offset = fram_data.calibration_offset;
 
     float raw_now = encoder_get_angle_deg();
     float saved_angle = fram_data.current_angle;
@@ -414,6 +420,7 @@ void fram_reconcile_startup_encoder_reference(void) {
 
     // Request one-time VESC position-offset synchronization when arming.
     startup_pid_offset_sync_pending = true;
+    startup_encoder_reference_reconciled = true;
 #endif
 }
 
@@ -742,6 +749,12 @@ void crsf_control_task(void *pvParameters) {
                 vesc_current_position = vesc_status->pid_pos_now;
                 vesc_position_valid = true;
 
+                #if FRAM_ENABLE
+                if (!startup_encoder_reference_reconciled && !crsf_is_armed()) {
+                    fram_reconcile_startup_encoder_reference();
+                }
+                #endif
+
                 bool is_new_status4 = (vesc_status->rx_time != last_status4_rx_tick);
                 if (is_new_status4) {
                     last_status4_rx_tick = vesc_status->rx_time;
@@ -1043,9 +1056,9 @@ void main_process_control_logic(void) {
             // Get current position feedback - use encoder if valid, otherwise VESC fallback
             float current_position_degrees;
             // Update encoder data first
-            encoder_update();
+            bool encoder_updated = encoder_update();
             
-            bool using_encoder_feedback = encoder_is_valid();
+            bool using_encoder_feedback = encoder_updated && encoder_is_valid();
             
             if (using_encoder_feedback) {
                 // Use encoder feedback for closed-loop control
@@ -1058,7 +1071,7 @@ void main_process_control_logic(void) {
                 // Rate limited warning about using fallback
                 static uint32_t last_fallback_warning = 0;
                 if (current_time - last_fallback_warning > 5000) {
-                    ESP_LOGW(TAG, "[FALLBACK] Using VESC position feedback (encoder invalid)");
+                    ESP_LOGW(TAG, "[FALLBACK] Using VESC position feedback (encoder update failed or invalid)");
                     last_fallback_warning = current_time;
                 }
             } else {
@@ -1414,6 +1427,10 @@ void app_main(void) {
     #elif ENCODER_TYPE == ENCODER_TYPE_VESC_INTERNAL
     ESP_LOGI(TAG, "VESC internal encoder configured - using CAN position feedback");
     ESP_LOGI(TAG, "Gear ratio: %.1f:1 for position conversion", GEAR_RATIO);
+    if (!encoder_init()) {
+        ESP_LOGE(TAG, "Failed to initialize VESC internal encoder");
+        return;
+    }
     
     #elif ENCODER_TYPE == ENCODER_TYPE_NONE
     ESP_LOGW(TAG, "No encoder configured - position feedback disabled");

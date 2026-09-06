@@ -8,12 +8,12 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "N:/GitHub/Dreadnought-Arm-Control/VESC_Express_Encoder_CRSF_Control/include",
-                "N:/GitHub/Dreadnought-Arm-Control/VESC_Express_Encoder_CRSF_Control/src",
+                "C:/Github/Dreadnought-Arm-Control/include",
+                "C:/Github/Dreadnought-Arm-Control/src",
                 "C:/Users/andre/.platformio/packages/framework-espidf/components/xtensa/esp32s3/include",
                 "C:/Users/andre/.platformio/packages/framework-espidf/components/xtensa/include",
                 "C:/Users/andre/.platformio/packages/framework-espidf/components/xtensa/deprecated_include",
-                "N:/GitHub/Dreadnought-Arm-Control/VESC_Express_Encoder_CRSF_Control/.pio/build/esp32-s3-devkitc-1/config",
+                "C:/Github/Dreadnought-Arm-Control/.pio/build/lolin_s3_mini/config",
                 "C:/Users/andre/.platformio/packages/framework-espidf/components/esp_libc/platform_include",
                 "C:/Users/andre/.platformio/packages/framework-espidf/components/freertos/config/include",
                 "C:/Users/andre/.platformio/packages/framework-espidf/components/freertos/config/include/freertos",
@@ -245,12 +245,12 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "N:/GitHub/Dreadnought-Arm-Control/VESC_Express_Encoder_CRSF_Control/include",
-                    "N:/GitHub/Dreadnought-Arm-Control/VESC_Express_Encoder_CRSF_Control/src",
+                    "C:/Github/Dreadnought-Arm-Control/include",
+                    "C:/Github/Dreadnought-Arm-Control/src",
                     "C:/Users/andre/.platformio/packages/framework-espidf/components/xtensa/esp32s3/include",
                     "C:/Users/andre/.platformio/packages/framework-espidf/components/xtensa/include",
                     "C:/Users/andre/.platformio/packages/framework-espidf/components/xtensa/deprecated_include",
-                    "N:/GitHub/Dreadnought-Arm-Control/VESC_Express_Encoder_CRSF_Control/.pio/build/esp32-s3-devkitc-1/config",
+                    "C:/Github/Dreadnought-Arm-Control/.pio/build/lolin_s3_mini/config",
                     "C:/Users/andre/.platformio/packages/framework-espidf/components/esp_libc/platform_include",
                     "C:/Users/andre/.platformio/packages/framework-espidf/components/freertos/config/include",
                     "C:/Users/andre/.platformio/packages/framework-espidf/components/freertos/config/include/freertos",
@@ -490,17 +490,16 @@
                 "IDF_VER=\"6.0.1\"",
                 "ESP_PLATFORM",
                 "PLATFORMIO=60119",
-                "ARDUINO_ESP32S3_DEV",
+                "BOARD_HAS_PSRAM",
+                "ARDUINO_LOLIN_S3_MINI",
                 "ARDUINO_USB_MODE=1",
-                "ARDUINO_RUNNING_CORE=1",
-                "ARDUINO_EVENT_RUNNING_CORE=1",
                 ""
             ],
             "cStandard": "gnu23",
             "cppStandard": "gnu++26",
             "compilerPath": "C:/Users/andre/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc.exe",
             "compilerArgs": [
-                "@N:/GitHub/Dreadnought-Arm-Control/VESC_Express_Encoder_CRSF_Control/.pio/build/esp32-s3-devkitc-1/toolchain/cflags",
+                "@C:/Github/Dreadnought-Arm-Control/.pio/build/lolin_s3_mini/toolchain/cflags",
                 ""
             ]
         }

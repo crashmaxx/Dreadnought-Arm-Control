@@ -1,6 +1,9 @@
 # Prerequisites
 *.d
 
+# PlatformIO build artifacts
+.pio/
+
 # Compiled Object files
 *.slo
 *.lo

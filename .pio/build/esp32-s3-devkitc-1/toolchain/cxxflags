@@ -1,6 +1,0 @@
--mlongcalls
--fno-builtin-memcpy
--fno-builtin-memset
--fno-builtin-bzero
-"-specs=N:/GitHub/Dreadnought-Arm-Control/VESC_Express_Encoder_CRSF_Control/.pio/build/esp32-s3-devkitc-1/specs/picolibc.specs"
--fno-rtti

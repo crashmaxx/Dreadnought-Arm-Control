@@ -118,11 +118,11 @@
 
 #ifdef BOARD_LEFT_ELBOW
   #define BOARD_NAME "Left_Elbow"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
-  #define ENCODER_A_PIN 7       // CS (Blue)
-  #define ENCODER_B_PIN 6       // MOSI (Yellow)
-  #define ENCODER_PWM_PIN 5     // MISO (White)
-  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
+  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_A_PIN 8       // CS (Blue)
+  #define ENCODER_B_PIN 11       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 9     // MISO (White)
+  // #define ENCODER_I_PIN 10   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -132,8 +132,8 @@
   #define CAN_ESP32_ID 3
   
   // CAN bus pins
-  #define CAN_TX_GPIO_NUM 13      // CAN TX pin for ESP32-S3
-  #define CAN_RX_GPIO_NUM 12      // CAN RX pin for ESP32-S3
+  #define CAN_TX_GPIO_NUM 6      // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 7      // CAN RX pin for ESP32-S3
 
   // CRSF pins
   #define CRSF_TX_PIN 2
@@ -153,24 +153,24 @@
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
    //FRAM configuration I2C pins
-  #define FRAM_ENABLE 0
-  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
-  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_ENABLE 1
+  #define FRAM_I2C_SDA_PIN 4    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 5    // SCL pin for ESP32-S3
   #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
   #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 0
+  #define ESP_NOW_TELEMETRY_ENABLE 1
 
 #endif
 
 #ifdef BOARD_RIGHT_ELBOW
   #define BOARD_NAME "Right_Elbow"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
-  #define ENCODER_A_PIN 7       // CS (Blue)
-  #define ENCODER_B_PIN 6       // MOSI (Yellow)
-  #define ENCODER_PWM_PIN 5     // MISO (White)
-  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
+  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_A_PIN 8      // CS (Blue)
+  #define ENCODER_B_PIN 11       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 9     // MISO (White)
+  // #define ENCODER_I_PIN 10   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -180,8 +180,8 @@
   #define CAN_ESP32_ID 3
   
   // CAN bus pins
-  #define CAN_TX_GPIO_NUM 13      // CAN TX pin for ESP32-S3
-  #define CAN_RX_GPIO_NUM 12      // CAN RX pin for ESP32-S3
+  #define CAN_TX_GPIO_NUM 6      // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 7      // CAN RX pin for ESP32-S3
 
   // CRSF pins
   #define CRSF_TX_PIN 2
@@ -201,9 +201,9 @@
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
    //FRAM configuration I2C pins
-  #define FRAM_ENABLE 0
-  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
-  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_ENABLE 1
+  #define FRAM_I2C_SDA_PIN 4    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 5    // SCL pin for ESP32-S3
   #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
   #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
@@ -214,11 +214,11 @@
 
 #ifdef BOARD_LEFT_UPPER
   #define BOARD_NAME "Left_Upper"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE  // Changed from DUAL_HYBRID
-  #define ENCODER_A_PIN 7       // CS (Blue)
-  #define ENCODER_B_PIN 6       // MOSI (Yellow)
-  #define ENCODER_PWM_PIN 5     // MISO (White)
-  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
+  #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
+  #define ENCODER_A_PIN 8       // CS (Blue)
+  #define ENCODER_B_PIN 11       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 9     // MISO (White)
+  // #define ENCODER_I_PIN 10   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
   #define ENCODER_PWM_MAX_US 1020  // 359° at max
@@ -228,8 +228,8 @@
   #define CAN_ESP32_ID 2
 
   // CAN bus pins
-  #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
-  #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+  #define CAN_TX_GPIO_NUM 6       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 7       // CAN RX pin for ESP32-S3
 
   // CRSF pins
   #define CRSF_TX_PIN 2
@@ -246,23 +246,23 @@
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
    //FRAM configuration I2C pins
-  #define FRAM_ENABLE 0
-  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
-  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_ENABLE 1
+  #define FRAM_I2C_SDA_PIN 4    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 5    // SCL pin for ESP32-S3
   #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
   #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 0
+  #define ESP_NOW_TELEMETRY_ENABLE 1
 
 #endif
 
 #ifdef BOARD_RIGHT_UPPER
   #define BOARD_NAME "Right_Upper"
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
-  #define ENCODER_A_PIN 12       // CS (Blue)
-  #define ENCODER_B_PIN 13       // MOSI (Yellow)
-  #define ENCODER_PWM_PIN 11     // MISO (White)
+  #define ENCODER_A_PIN 8       // CS (Blue)
+  #define ENCODER_B_PIN 11       // MOSI (Yellow)
+  #define ENCODER_PWM_PIN 9     // MISO (White)
   // #define ENCODER_I_PIN 10   // CLK (Green) - Not used for quadrature only
   #define ENCODER_PPR 4096
   #define ENCODER_PWM_MIN_US 0     // 0v = 0°
@@ -273,8 +273,8 @@
   #define CAN_ESP32_ID 2
 
     // CAN bus pins
-  #define CAN_TX_GPIO_NUM 8       // CAN TX pin for ESP32-S3
-  #define CAN_RX_GPIO_NUM 9       // CAN RX pin for ESP32-S3
+  #define CAN_TX_GPIO_NUM 6       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 7       // CAN RX pin for ESP32-S3
 
   // CRSF pins
   #define CRSF_TX_PIN 2
@@ -292,8 +292,8 @@
 
   //FRAM configuration I2C pins
   #define FRAM_ENABLE 1
-  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
-  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_I2C_SDA_PIN 4    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 5    // SCL pin for ESP32-S3
   #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
   #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 

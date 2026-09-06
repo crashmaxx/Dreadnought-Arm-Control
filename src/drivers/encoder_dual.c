@@ -47,7 +47,6 @@ typedef struct {
     bool pwm_zero_at_startup;
     float initial_quad_position_rad;
     bool movement_detected;
-    uint32_t startup_time_us;
 } dual_encoder_state_t;
 
 static dual_encoder_state_t dual_state = {0};
@@ -87,7 +86,6 @@ static bool dual_encoder_init(void) {
     dual_state.pwm_zero_at_startup = false;
     dual_state.movement_detected = false;
     dual_state.last_update_us = esp_timer_get_time();
-    dual_state.startup_time_us = dual_state.last_update_us;
     dual_state.total_error_count = 0;
     
     // Check if PWM reads 0 at startup
@@ -98,7 +96,7 @@ static bool dual_encoder_init(void) {
         if (fabsf(pwm_angle_deg) < 1.0f) {  // Less than 1 degree = effectively zero
             dual_state.pwm_zero_at_startup = true;
             dual_state.initial_quad_position_rad = quad_encoder_interface.get_angle_rad();
-            ESP_LOGI(TAG, "PWM reads 0° at startup - waiting for movement to initialize offset (will use MIN_ANGLE %.1f° as reference)", MIN_ANGLE);
+            ESP_LOGI(TAG, "PWM reads 0° at startup - waiting for a restored reference or movement before initializing the offset");
         }
     }
     
@@ -134,17 +132,6 @@ static bool dual_encoder_update(void) {
             ESP_LOGI(TAG, "Movement detected (%.2f rad = %.1f deg) - can now initialize with PWM", 
                      movement_delta, encoder_rad_to_deg(movement_delta));
         }
-    }
-    
-    // Timeout for PWM zero detection - after 5 seconds, give up waiting for PWM
-    if (dual_state.pwm_zero_at_startup && !dual_state.offset_initialized && 
-        (current_time_us - dual_state.startup_time_us) > 5000000) {  // 5 seconds
-        ESP_LOGW(TAG, "PWM zero timeout - initializing with quadrature at MIN_ANGLE (%.1f°)", MIN_ANGLE);
-        dual_state.offset_initialized = true;
-        // Set offset so that current quadrature position equals MIN_ANGLE
-        float min_angle_rad = encoder_deg_to_rad(MIN_ANGLE);
-        float current_quad_rad = quad_encoder_interface.get_angle_rad();
-        dual_state.initial_quad_offset_rad = min_angle_rad - current_quad_rad;
     }
     
     // Initialize absolute position from PWM when conditions are met
@@ -189,13 +176,12 @@ static bool dual_encoder_update(void) {
         dual_state.combined_angle_rad = pwm_encoder_interface.get_angle_rad();
         dual_state.velocity_rad_s = pwm_encoder_interface.get_velocity_rad_s();
     } else if (quad_valid) {
-        // PWM was zero at startup and not yet initialized: use relative quadrature from MIN_ANGLE
+        // PWM was zero at startup and no persistent reference is available yet.
         float quad_angle_rad = quad_encoder_interface.get_angle_rad();
         float movement_from_start = quad_angle_rad - dual_state.initial_quad_position_rad;
-        float min_angle_rad = encoder_deg_to_rad(MIN_ANGLE);
-        dual_state.combined_angle_rad = min_angle_rad + movement_from_start;
+        dual_state.combined_angle_rad = movement_from_start;
         dual_state.velocity_rad_s = quad_encoder_interface.get_velocity_rad_s();
-        ESP_LOGD(TAG, "Using relative quadrature from MIN_ANGLE: %.2f° (waiting for PWM initialization)", 
+        ESP_LOGD(TAG, "Using relative quadrature from startup: %.2f° (waiting for PWM initialization)",
                 encoder_rad_to_deg(dual_state.combined_angle_rad));
     } else {
         // No valid readings
@@ -256,6 +242,22 @@ static void dual_encoder_reset_errors(void) {
     dual_state.total_error_count = 0;
 }
 
+static bool dual_encoder_set_zero_position(float target_angle_deg) {
+    if (!quad_encoder_interface.update() || !quad_encoder_interface.is_valid()) {
+        ESP_LOGW(TAG, "Cannot set dual encoder position: quadrature encoder invalid");
+        return false;
+    }
+
+    float target_angle_rad = encoder_deg_to_rad(target_angle_deg);
+    float quad_angle_rad = quad_encoder_interface.get_angle_rad();
+    dual_state.initial_quad_offset_rad = target_angle_rad - quad_angle_rad;
+    dual_state.offset_initialized = true;
+    dual_state.pwm_zero_at_startup = false;
+
+    ESP_LOGI(TAG, "Dual quadrature tracking aligned to %.1f°", target_angle_deg);
+    return true;
+}
+
 static const char* dual_encoder_get_type_name(void) {
     return "Dual Hybrid (PWM+Quad)";
 }
@@ -271,6 +273,7 @@ const encoder_interface_t dual_encoder_interface = {
     .is_valid = dual_encoder_is_valid,
     .get_error_count = dual_encoder_get_error_count,
     .reset_errors = dual_encoder_reset_errors,
+    .set_zero_position = dual_encoder_set_zero_position,
     .get_type_name = dual_encoder_get_type_name
 };
 
