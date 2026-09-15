@@ -24,6 +24,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "board_config.h"
+#include "comm/crsf_utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -44,6 +45,8 @@ typedef struct {
     // Initialization tracking
     bool offset_initialized;
     float initial_quad_offset_rad;
+    bool pwm_fallback_offset_valid;
+    float pwm_fallback_offset_rad;
     bool pwm_zero_at_startup;
     float initial_quad_position_rad;
     bool movement_detected;
@@ -83,6 +86,7 @@ static bool dual_encoder_init(void) {
     // Initialize dual encoder state
     dual_state.valid = false;
     dual_state.offset_initialized = false;
+    dual_state.pwm_fallback_offset_valid = false;
     dual_state.pwm_zero_at_startup = false;
     dual_state.movement_detected = false;
     dual_state.last_update_us = esp_timer_get_time();
@@ -108,10 +112,38 @@ static bool dual_encoder_init(void) {
 // Update dual encoder by combining PWM and quadrature readings
 static bool dual_encoder_update(void) {
     uint32_t current_time_us = esp_timer_get_time();
-    
-    // Update both encoders
-    bool pwm_updated = pwm_encoder_interface.update();
     bool quad_updated = quad_encoder_interface.update();
+
+    // PWM is only an absolute reference while disarmed. Never allow it to
+    // influence the position feedback used for armed motor control.
+    if (crsf_is_armed()) {
+        bool quad_valid = quad_updated && quad_encoder_interface.is_valid();
+        if (!quad_valid) {
+            dual_state.valid = false;
+            return false;
+        }
+
+        float quad_angle_rad = quad_encoder_interface.get_angle_rad();
+        dual_state.combined_angle_rad = dual_state.offset_initialized ?
+            quad_angle_rad + dual_state.initial_quad_offset_rad : quad_angle_rad;
+        dual_state.velocity_rad_s = quad_encoder_interface.get_velocity_rad_s();
+        dual_state.combined_angle_deg = encoder_rad_to_deg(dual_state.combined_angle_rad);
+        dual_state.velocity_deg_s = encoder_rad_to_deg(dual_state.velocity_rad_s);
+        dual_state.last_update_us = current_time_us;
+        dual_state.valid = true;
+        dual_state.total_error_count = quad_encoder_interface.get_error_count();
+
+        encoder_data.angle_rad = dual_state.combined_angle_rad;
+        encoder_data.angle_deg = dual_state.combined_angle_deg;
+        encoder_data.velocity_rad_s = dual_state.velocity_rad_s;
+        encoder_data.velocity_deg_s = dual_state.velocity_deg_s;
+        encoder_data.timestamp_us = current_time_us;
+        encoder_data.valid = dual_state.valid;
+        encoder_data.error_count = dual_state.total_error_count;
+        return true;
+    }
+
+    bool pwm_updated = pwm_encoder_interface.update();
     
     if (!pwm_updated && !quad_updated) {
         return false; // Nothing to update
@@ -165,24 +197,22 @@ static bool dual_encoder_update(void) {
         }
     }
     
-    // Determine combined angle based on initialization state
-    if (dual_state.offset_initialized && quad_valid) {
-        // After initialization: use quadrature + offset for position tracking
+    // Prefer quadrature whenever it is valid. PWM is only an absolute startup and
+    // calibration reference; it must not replace valid quadrature position feedback.
+    if (quad_valid) {
         float quad_angle_rad = quad_encoder_interface.get_angle_rad();
-        dual_state.combined_angle_rad = quad_angle_rad + dual_state.initial_quad_offset_rad;
+        dual_state.combined_angle_rad = dual_state.offset_initialized ?
+            quad_angle_rad + dual_state.initial_quad_offset_rad : quad_angle_rad - dual_state.initial_quad_position_rad;
         dual_state.velocity_rad_s = quad_encoder_interface.get_velocity_rad_s();
+        if (pwm_valid) {
+            dual_state.pwm_fallback_offset_rad = dual_state.combined_angle_rad - pwm_encoder_interface.get_angle_rad();
+            dual_state.pwm_fallback_offset_valid = true;
+        }
     } else if (pwm_valid && !dual_state.pwm_zero_at_startup) {
-        // Before initialization and PWM wasn't zero at startup: use PWM
-        dual_state.combined_angle_rad = pwm_encoder_interface.get_angle_rad();
+        // No quadrature feedback is available, so use PWM only as a temporary fallback.
+        dual_state.combined_angle_rad = pwm_encoder_interface.get_angle_rad() +
+            (dual_state.pwm_fallback_offset_valid ? dual_state.pwm_fallback_offset_rad : 0.0f);
         dual_state.velocity_rad_s = pwm_encoder_interface.get_velocity_rad_s();
-    } else if (quad_valid) {
-        // PWM was zero at startup and no persistent reference is available yet.
-        float quad_angle_rad = quad_encoder_interface.get_angle_rad();
-        float movement_from_start = quad_angle_rad - dual_state.initial_quad_position_rad;
-        dual_state.combined_angle_rad = movement_from_start;
-        dual_state.velocity_rad_s = quad_encoder_interface.get_velocity_rad_s();
-        ESP_LOGD(TAG, "Using relative quadrature from startup: %.2f° (waiting for PWM initialization)",
-                encoder_rad_to_deg(dual_state.combined_angle_rad));
     } else {
         // No valid readings
         dual_state.valid = false;
@@ -253,6 +283,11 @@ static bool dual_encoder_set_zero_position(float target_angle_deg) {
     dual_state.initial_quad_offset_rad = target_angle_rad - quad_angle_rad;
     dual_state.offset_initialized = true;
     dual_state.pwm_zero_at_startup = false;
+
+    if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
+        dual_state.pwm_fallback_offset_rad = target_angle_rad - pwm_encoder_interface.get_angle_rad();
+        dual_state.pwm_fallback_offset_valid = true;
+    }
 
     ESP_LOGI(TAG, "Dual quadrature tracking aligned to %.1f°", target_angle_deg);
     return true;

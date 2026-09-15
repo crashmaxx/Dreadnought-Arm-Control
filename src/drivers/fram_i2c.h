@@ -11,8 +11,14 @@
 #define FRAM_ADDR_CALIBRATED_FLAG       0x0008  // Bool (1 byte) - Calibration status
 #define FRAM_ADDR_BOOT_COUNT            0x0009  // uint32_t (4 bytes) - Boot counter
 #define FRAM_ADDR_TIMESTAMP             0x000D  // uint32_t (4 bytes) - Last save timestamp
-#define FRAM_ADDR_PWM_CALIBRATION_ANGLE 0x0010  // Float (4 bytes) - PWM reading at last calibration
+#define FRAM_ADDR_PWM_CALIBRATION_ANGLE 0x0010  // Float (4 bytes) - PWM reading at calibration
 #define FRAM_ADDR_REST_ANGLE            0x0014  // Float (4 bytes) - Rest angle saved at calibration
+#define FRAM_ADDR_PWM_ANGLE_AT_LAST_SAVE 0x0018  // Float (4 bytes) - PWM reading paired with encoder angle
+#define FRAM_ADDR_PWM_SAVE_VALID         0x001C  // Bool (1 byte) - Paired PWM/encoder snapshot is complete
+
+// Redundant position snapshots. Each record is written inactive, populated, then marked valid.
+#define FRAM_ADDR_POSITION_SNAPSHOT_A     0x0040
+#define FRAM_ADDR_POSITION_SNAPSHOT_B     0x0050
 
 // ESP-NOW remote data addresses (starting at 0x0020 to avoid conflicts)
 #define FRAM_ADDR_REMOTE_ANGLE_CH2   0x0020  // Float (4 bytes) - Remote upper arm angle (channel 2)
@@ -28,10 +34,18 @@ typedef struct {
     float calibration_offset;
     float pwm_calibration_angle;
     float rest_angle;
+    float pwm_angle_at_last_save;
     bool calibrated;
+    bool pwm_save_valid;
     uint32_t boot_count;
     uint32_t last_save_time;
 } fram_encoder_data_t;
+
+typedef struct {
+    float joint_angle;
+    float pwm_angle;
+    uint32_t sequence;
+} fram_position_snapshot_t;
 
 // Data structure for remote ESP-NOW angle data (multi-channel)
 typedef struct {
@@ -136,6 +150,9 @@ esp_err_t fram_save_encoder_data(const fram_encoder_data_t *encoder_data);
  * @return ESP_OK on success, error code on failure
  */
 esp_err_t fram_load_encoder_data(fram_encoder_data_t *encoder_data);
+
+esp_err_t fram_save_position_snapshot(const fram_position_snapshot_t *snapshot);
+esp_err_t fram_load_latest_position_snapshot(fram_position_snapshot_t *snapshot);
 
 /**
  * @brief Test FRAM connectivity and basic read/write operations

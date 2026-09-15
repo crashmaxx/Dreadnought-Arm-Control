@@ -192,9 +192,9 @@
   #define MIXING_ENABLE 1
   #define MIXING_CHANNEL 2
   #define MIXING_MULTIPLIER -0.6675f
-  #define REST_ANGLE 40.0f
-  #define MIN_ANGLE -230.0f
-  #define MAX_ANGLE 230.0f
+  #define REST_ANGLE 0.0f
+  #define MIN_ANGLE -200.0f
+  #define MAX_ANGLE 200.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
@@ -282,9 +282,9 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 2
-  #define REST_ANGLE 50.0f
-  #define MIN_ANGLE -130.0f
-  #define MAX_ANGLE 130.0f
+  #define REST_ANGLE 20.0f
+  #define MIN_ANGLE -140.0f
+  #define MAX_ANGLE 140.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands

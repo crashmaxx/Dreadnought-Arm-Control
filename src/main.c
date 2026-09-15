@@ -126,7 +126,7 @@ static TickType_t latest_status4_rx_tick = 0;
 
 // VESC configuration update tracking
 static uint32_t last_vesc_config_update = 0;
-static bool vesc_config_sent = false;
+static uint8_t vesc_config_step = 0;
 
 // Forward declarations
 void wait_for_safe_can_slot(void);
@@ -156,37 +156,47 @@ void espnow_test_send_random_data(void) {
 }
 #endif
 
-// VESC configuration update function - sends velocity/acceleration parameters periodically
+// VESC configuration update function - sends one motion parameter per control cycle.
 void update_vesc_motion_parameters(uint32_t current_time) {
-    // Send configuration parameters every 5 seconds, or immediately if never sent
-    const uint32_t CONFIG_UPDATE_INTERVAL_MS = 5000;  // 5 seconds
-    
-    if (!vesc_config_sent || (current_time - last_vesc_config_update > CONFIG_UPDATE_INTERVAL_MS)) {
+    const uint32_t CONFIG_UPDATE_INTERVAL_MS = 5000;
+
+    if (vesc_config_step == 0 &&
+            last_vesc_config_update != 0 &&
+            (current_time - last_vesc_config_update) <= CONFIG_UPDATE_INTERVAL_MS) {
+        return;
+    }
+
         #if DEBUG_VESC_STATUS
         ESP_LOGI(TAG, "[VESC] Updating VESC motion parameters");
         #endif
-        
-        // Send velocity and acceleration limits (wait for safe CAN slots between commands)
+
         wait_for_safe_can_slot();
+
+    switch (vesc_config_step) {
+    case 0:
         comm_can_set_max_sp_vel(CAN_VESC_ID, MAX_VEL);
         #if DEBUG_CAN_COMMANDS
         ESP_LOGI(TAG, "[CAN_CMD] CMD_ID=%d (SET_MAX_SP_VEL) to VESC_ID=%d, value=%.1f", CAN_PACKET_SET_MAX_SP_VEL, CAN_VESC_ID, MAX_VEL);
         #endif
-        
-        wait_for_safe_can_slot();
+        vesc_config_step = 1;
+        break;
+
+    case 1:
         comm_can_set_max_sp_accel(CAN_VESC_ID, MAX_ACCEL);
         #if DEBUG_CAN_COMMANDS
         ESP_LOGI(TAG, "[CAN_CMD] CMD_ID=%d (SET_MAX_SP_ACCEL) to VESC_ID=%d, value=%.1f", CAN_PACKET_SET_MAX_SP_ACCEL, CAN_VESC_ID, MAX_ACCEL);
         #endif
-        
-        wait_for_safe_can_slot();
+        vesc_config_step = 2;
+        break;
+
+    default:
         comm_can_set_max_sp_decel(CAN_VESC_ID, MAX_DECEL);
         #if DEBUG_CAN_COMMANDS
         ESP_LOGI(TAG, "[CAN_CMD] CMD_ID=%d (SET_MAX_SP_DECEL) to VESC_ID=%d, value=%.1f", CAN_PACKET_SET_MAX_SP_DECEL, CAN_VESC_ID, MAX_DECEL);
         #endif
-        
         last_vesc_config_update = current_time;
-        vesc_config_sent = true;
+        vesc_config_step = 0;
+        break;
     }
 }
 
@@ -289,47 +299,6 @@ static float wrap_angle_near_reference(float angle_deg, float ref_deg) {
     return angle_deg;
 }
 
-static float hybrid_select_nearest_turn(float pwm_angle_deg, float saved_last_angle_deg, float saved_pwm_angle_deg, float saved_rest_angle_deg) {
-    // PWM is only used as the absolute bootstrap reference before calibration.
-    // Once the encoder has been calibrated and initialized, quadrature becomes the authority.
-    float rest_offset_deg = saved_rest_angle_deg - saved_pwm_angle_deg;
-    float pwm_reference_deg = pwm_angle_deg + rest_offset_deg;
-
-    // When the joint was moved while powered down, the last saved angle may be stale but the
-    // saved rest position is still the correct anchor for the zero-crossing decision. Prefer the
-    // candidate closest to the saved rest angle when the options are otherwise nearly tied.
-    float best_angle = pwm_reference_deg;
-    float best_err = absf_local(pwm_reference_deg - saved_last_angle_deg);
-    float best_rest_err = absf_local(pwm_reference_deg - saved_rest_angle_deg);
-
-    for (int k = -3; k <= 3; k++) {
-        float candidate = pwm_reference_deg + (360.0f * (float)k);
-        float err = absf_local(candidate - saved_last_angle_deg);
-        float rest_err = absf_local(candidate - saved_rest_angle_deg);
-
-        // Prefer the candidate with the smallest error to the last saved position.
-        // If two turns are almost identical, choose the branch that stays closest to the saved rest angle.
-        // This prevents +50° from being flipped to -50° right at a zero crossing.
-        if (err < best_err - 0.25f || (fabsf(err - best_err) <= 0.25f && rest_err < best_rest_err)) {
-            best_err = err;
-            best_rest_err = rest_err;
-            best_angle = candidate;
-        }
-    }
-
-    // If the last saved angle was already near the rest angle, lock to the rest-angle branch to
-    // prevent a small manual move while off from choosing the wrong sign on startup.
-    if (absf_local(saved_last_angle_deg - saved_rest_angle_deg) <= 45.0f) {
-        float rest_branch = saved_rest_angle_deg + wrap_angle_near_reference(pwm_reference_deg - saved_rest_angle_deg, 0.0f);
-        float rest_branch_err = absf_local(rest_branch - saved_last_angle_deg);
-        if (rest_branch_err <= best_err) {
-            return rest_branch;
-        }
-    }
-
-    return best_angle;
-}
-
 // Reconcile restored calibration offset with the current raw encoder reading.
 // This preserves angle continuity across reboot by selecting the nearest turn-equivalent offset.
 void fram_reconcile_startup_encoder_reference(void) {
@@ -351,27 +320,31 @@ void fram_reconcile_startup_encoder_reference(void) {
     }
 
     #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
-    // PWM is the boot-time absolute anchor; quadrature resumes as the tracking source after alignment.
-    if (fram_data.calibrated) {
-        if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
-            float pwm_now = pwm_encoder_interface.get_angle_deg();
-            float saved_last_angle = fram_data.current_angle;
-            float saved_pwm_angle = fram_data.pwm_calibration_angle;
-            float saved_rest_angle = fram_data.rest_angle;
+    float saved_angle = fram_data.current_angle;
+    float restored_angle = saved_angle;
 
-            float candidate_angle = hybrid_select_nearest_turn(pwm_now, saved_last_angle, saved_pwm_angle, saved_rest_angle);
-            if (encoder_set_zero_position(candidate_angle)) {
-                encoder_update();
-                encoder_calibration_offset = 0.0f;
-                encoder_calibrated = true;
-                fram_data.current_angle = candidate_angle;
-                fram_data.calibration_offset = 0.0f;
-
-                ESP_LOGI(TAG, "FRAM: Hybrid startup restore used PWM %.1f° with rest offset %.1f°; aligned quadrature to saved %.1f° => %.1f°",
-                         pwm_now, (saved_rest_angle - saved_pwm_angle), saved_last_angle, candidate_angle);
-            }
-        }
+    if (fram_data.pwm_save_valid &&
+            pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
+        float pwm_now = pwm_encoder_interface.get_angle_deg();
+        float pwm_now_near_saved = wrap_angle_near_reference(pwm_now, fram_data.pwm_angle_at_last_save);
+        restored_angle += pwm_now_near_saved - fram_data.pwm_angle_at_last_save;
+    } else {
+        ESP_LOGW(TAG, "FRAM: Hybrid startup restore has no valid PWM snapshot; using saved angle without off-power movement correction");
     }
+
+    if (encoder_set_zero_position(restored_angle)) {
+        encoder_update();
+        encoder_calibration_offset = 0.0f;
+        encoder_calibrated = true;
+        fram_data.calibration_offset = 0.0f;
+        startup_pid_offset_sync_pending = true;
+        startup_encoder_reference_reconciled = true;
+        ESP_LOGI(TAG, "FRAM: Hybrid startup restore aligned quadrature from saved %.1f° to %.1f°", saved_angle, restored_angle);
+        return;
+    }
+
+    ESP_LOGW(TAG, "FRAM: Hybrid startup restore failed to align quadrature to %.1f°", restored_angle);
+    return;
     #endif
 
     if (!fram_data.calibrated) {
@@ -382,7 +355,7 @@ void fram_reconcile_startup_encoder_reference(void) {
     encoder_calibration_offset = fram_data.calibration_offset;
 
     float raw_now = encoder_get_angle_deg();
-    float saved_angle = fram_data.current_angle;
+    float saved_reference_angle = fram_data.current_angle;
     float base_calibrated = raw_now + encoder_calibration_offset;
 
     int best_turn_adjust = 0;
@@ -390,7 +363,7 @@ void fram_reconcile_startup_encoder_reference(void) {
 
     for (int k = -3; k <= 3; k++) {
         float candidate = base_calibrated + (360.0f * (float)k);
-        float err = absf_local(candidate - saved_angle);
+        float err = absf_local(candidate - saved_reference_angle);
         if (err < best_err) {
             best_err = err;
             best_turn_adjust = k;
@@ -405,7 +378,7 @@ void fram_reconcile_startup_encoder_reference(void) {
     }
 
     float reconciled_angle = raw_now + encoder_calibration_offset;
-    float startup_delta = reconciled_angle - saved_angle;
+    float startup_delta = reconciled_angle - saved_reference_angle;
 
     if (absf_local(startup_delta) > FRAM_MAX_OFF_MOVEMENT_DEG) {
         ESP_LOGW(TAG, "FRAM: Startup delta %.1f deg exceeds expected off-power movement (%.1f deg)",
@@ -439,6 +412,19 @@ void fram_init_and_load_data(void) {
     // Load previously saved encoder data
     ret = fram_load_encoder_data(&fram_data);
     if (ret == ESP_OK) {
+        fram_position_snapshot_t position_snapshot;
+        esp_err_t snapshot_ret = fram_load_latest_position_snapshot(&position_snapshot);
+        if (snapshot_ret == ESP_OK) {
+            fram_data.current_angle = position_snapshot.joint_angle;
+            fram_data.pwm_angle_at_last_save = position_snapshot.pwm_angle;
+            fram_data.pwm_save_valid = true;
+            ESP_LOGI(TAG, "FRAM: Restored position snapshot #%lu - Angle:%.2f°, PWM:%.2f°",
+                    position_snapshot.sequence, position_snapshot.joint_angle, position_snapshot.pwm_angle);
+        } else {
+            fram_data.pwm_save_valid = false;
+            ESP_LOGW(TAG, "FRAM: No valid redundant position snapshot; using legacy saved angle");
+        }
+
         // Restore calibration data if valid
         if (fram_data.calibrated) {
             encoder_calibration_offset = fram_data.calibration_offset;
@@ -499,16 +485,34 @@ void fram_save_current_encoder_data(uint32_t current_time) {
     fram_data.calibrated = encoder_calibrated;
 
     #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
-    if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
+    if (!fram_data.calibrated && pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
         fram_data.pwm_calibration_angle = pwm_encoder_interface.get_angle_deg();
+    }
+    fram_data.pwm_save_valid = false;
+    if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
+        fram_data.pwm_angle_at_last_save = pwm_encoder_interface.get_angle_deg();
+        fram_data.pwm_save_valid = true;
     }
     fram_data.rest_angle = REST_ANGLE;
     #else
     fram_data.pwm_calibration_angle = 0.0f;
     fram_data.rest_angle = REST_ANGLE;
+    fram_data.pwm_angle_at_last_save = 0.0f;
+    fram_data.pwm_save_valid = false;
     #endif
 
     fram_data.last_save_time = current_time;
+
+    if (fram_data.pwm_save_valid) {
+        fram_position_snapshot_t position_snapshot = {
+            .joint_angle = fram_data.current_angle,
+            .pwm_angle = fram_data.pwm_angle_at_last_save,
+        };
+        esp_err_t snapshot_ret = fram_save_position_snapshot(&position_snapshot);
+        if (snapshot_ret != ESP_OK) {
+            ESP_LOGW(TAG, "FRAM: Failed to save redundant position snapshot: %s", esp_err_to_name(snapshot_ret));
+        }
+    }
 
     // Save to FRAM
     esp_err_t ret = fram_save_encoder_data(&fram_data);
@@ -992,6 +996,10 @@ void main_process_control_logic(void) {
     static uint32_t last_pos_cmd_time = 0;
     static float last_pos_cmd_revs = 0.0f;
     static bool pos_cmd_initialized = false;
+
+    // These are VESC configuration commands, not position commands. Send them
+    // even when control is disarmed or the current target needs no update.
+    update_vesc_motion_parameters(current_time);
     
     // Check if armed using utility function (requires CRSF connection)
     if (crsf_is_connected() && crsf_is_armed()) {
@@ -1036,7 +1044,7 @@ void main_process_control_logic(void) {
             } else {
                 // No startup sync needed: hold current VESC position for one control frame.
                 wait_for_safe_can_slot();
-                comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_current_position);
+                comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_current_position, MAX_VEL);
             }
 
             return;
@@ -1045,7 +1053,7 @@ void main_process_control_logic(void) {
         // Hold briefly after arm transition so status data can settle before normal control.
         if (current_time < arm_transition_hold_until_ms) {
             wait_for_safe_can_slot();
-            comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_current_position);
+            comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_current_position, MAX_VEL);
             return;
         }
 
@@ -1105,10 +1113,10 @@ void main_process_control_logic(void) {
             
             // Rate limit CAN command debug to every 2 seconds
             if (current_time - last_can_cmd_debug > 2000) {
-                DEBUG_CAN_CMD("CMD_ID=%d (SET_POS_FLOATINGPOINT) to VESC_ID=%d, value=%.6f", CAN_PACKET_SET_POS_FLOATINGPOINT, CAN_VESC_ID, vesc_target_position_revolutions);
+                DEBUG_CAN_CMD("CMD_ID=%d (SET_POS_FLOATINGPOINT) to VESC_ID=%d, pos=%.6f, max_vel=%.1f", CAN_PACKET_SET_POS_FLOATINGPOINT, CAN_VESC_ID, vesc_target_position_revolutions, MAX_VEL);
                 last_can_cmd_debug = current_time;
             }
-            comm_can_set_pos_floatingpoint(CAN_VESC_ID, vesc_target_position_revolutions);
+            comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_target_position_revolutions, MAX_VEL);
             last_pos_cmd_time = current_time;
             last_pos_cmd_revs = vesc_target_position_revolutions;
             pos_cmd_initialized = true;
@@ -1116,13 +1124,28 @@ void main_process_control_logic(void) {
             // Save current encoder angle to FRAM after each CAN position command
             #if FRAM_ENABLE
             if (fram_initialized) {
+                #if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
+                if (pwm_encoder_interface.update() && pwm_encoder_interface.is_valid()) {
+                    float pwm_angle_at_save = pwm_encoder_interface.get_angle_deg();
+                    fram_position_snapshot_t position_snapshot = {
+                        .joint_angle = current_position_degrees,
+                        .pwm_angle = pwm_angle_at_save,
+                    };
+                    esp_err_t snapshot_ret = fram_save_position_snapshot(&position_snapshot);
+                    if (snapshot_ret == ESP_OK) {
+                        fram_data.current_angle = current_position_degrees;
+                        fram_data.pwm_angle_at_last_save = pwm_angle_at_save;
+                        fram_data.pwm_save_valid = true;
+                    } else {
+                        ESP_LOGW(TAG, "FRAM: Failed to save position snapshot: %s", esp_err_to_name(snapshot_ret));
+                    }
+                }
+                #else
                 fram_write_float(FRAM_ADDR_ENCODER_ANGLE, current_position_degrees);
                 fram_write_uint32(FRAM_ADDR_TIMESTAMP, current_time);
+                #endif
             }
             #endif
-            
-            // Update VESC motion parameters periodically (after position control)
-            update_vesc_motion_parameters(current_time);
             
             // Update ESP-NOW telemetry data with current system values
             #if ESP_NOW_TELEMETRY_ENABLE && !DEBUG_ESPNOW_TEST

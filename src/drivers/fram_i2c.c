@@ -33,6 +33,12 @@ static const char *TAG = "FRAM_I2C";
 
 static i2c_master_bus_handle_t fram_i2c_bus_handle = NULL;
 static i2c_master_dev_handle_t fram_i2c_device_handle = NULL;
+static uint32_t latest_position_snapshot_sequence = 0;
+
+#define FRAM_SNAPSHOT_ANGLE_OFFSET       0x00
+#define FRAM_SNAPSHOT_PWM_OFFSET         0x04
+#define FRAM_SNAPSHOT_SEQUENCE_OFFSET    0x08
+#define FRAM_SNAPSHOT_VALID_OFFSET       0x0C
 
 // Debug macros with rate limiting
 #if DEBUG_FRAM_I2C
@@ -237,6 +243,13 @@ esp_err_t fram_save_encoder_data(const fram_encoder_data_t *encoder_data) {
 
     esp_err_t ret;
 
+    // Clear validity before updating either member of the paired position snapshot.
+    ret = fram_write_byte(FRAM_ADDR_PWM_SAVE_VALID, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to invalidate PWM save snapshot: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     // Save current angle
     ret = fram_write_float(FRAM_ADDR_ENCODER_ANGLE, encoder_data->current_angle);
     if (ret != ESP_OK) {
@@ -264,6 +277,12 @@ esp_err_t fram_save_encoder_data(const fram_encoder_data_t *encoder_data) {
         return ret;
     }
 
+    ret = fram_write_float(FRAM_ADDR_PWM_ANGLE_AT_LAST_SAVE, encoder_data->pwm_angle_at_last_save);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save paired PWM angle: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     // Save calibration flag
     ret = fram_write_byte(FRAM_ADDR_CALIBRATED_FLAG, encoder_data->calibrated ? 1 : 0);
     if (ret != ESP_OK) {
@@ -285,10 +304,103 @@ esp_err_t fram_save_encoder_data(const fram_encoder_data_t *encoder_data) {
         return ret;
     }
 
+    ret = fram_write_byte(FRAM_ADDR_PWM_SAVE_VALID, encoder_data->pwm_save_valid ? 1 : 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to validate PWM save snapshot: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     DEBUG_FRAM("Saved encoder data - Angle:%.2f°, Offset:%.2f°, Calibrated:%s, Boot:%lu, Time:%lu", 
                encoder_data->current_angle, encoder_data->calibration_offset, 
                encoder_data->calibrated ? "YES" : "NO", encoder_data->boot_count, encoder_data->last_save_time);
 
+    return ESP_OK;
+}
+
+static esp_err_t fram_read_position_snapshot(uint16_t address, fram_position_snapshot_t *snapshot, bool *valid) {
+    uint8_t valid_byte = 0;
+    esp_err_t ret = fram_read_byte(address + FRAM_SNAPSHOT_VALID_OFFSET, &valid_byte);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    *valid = (valid_byte == 1);
+    if (!*valid) {
+        return ESP_OK;
+    }
+
+    ret = fram_read_float(address + FRAM_SNAPSHOT_ANGLE_OFFSET, &snapshot->joint_angle);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ret = fram_read_float(address + FRAM_SNAPSHOT_PWM_OFFSET, &snapshot->pwm_angle);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    return fram_read_uint32(address + FRAM_SNAPSHOT_SEQUENCE_OFFSET, &snapshot->sequence);
+}
+
+esp_err_t fram_save_position_snapshot(const fram_position_snapshot_t *snapshot) {
+    if (!snapshot) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint32_t next_sequence = latest_position_snapshot_sequence + 1;
+    if (next_sequence == 0) {
+        next_sequence = 1;
+    }
+    uint16_t address = (next_sequence & 1U) ? FRAM_ADDR_POSITION_SNAPSHOT_A : FRAM_ADDR_POSITION_SNAPSHOT_B;
+
+    esp_err_t ret = fram_write_byte(address + FRAM_SNAPSHOT_VALID_OFFSET, 0);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ret = fram_write_float(address + FRAM_SNAPSHOT_ANGLE_OFFSET, snapshot->joint_angle);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ret = fram_write_float(address + FRAM_SNAPSHOT_PWM_OFFSET, snapshot->pwm_angle);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ret = fram_write_uint32(address + FRAM_SNAPSHOT_SEQUENCE_OFFSET, next_sequence);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ret = fram_write_byte(address + FRAM_SNAPSHOT_VALID_OFFSET, 1);
+    if (ret == ESP_OK) {
+        latest_position_snapshot_sequence = next_sequence;
+    }
+    return ret;
+}
+
+esp_err_t fram_load_latest_position_snapshot(fram_position_snapshot_t *snapshot) {
+    if (!snapshot) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    fram_position_snapshot_t snapshot_a = {0};
+    fram_position_snapshot_t snapshot_b = {0};
+    bool valid_a = false;
+    bool valid_b = false;
+    esp_err_t ret = fram_read_position_snapshot(FRAM_ADDR_POSITION_SNAPSHOT_A, &snapshot_a, &valid_a);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ret = fram_read_position_snapshot(FRAM_ADDR_POSITION_SNAPSHOT_B, &snapshot_b, &valid_b);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    if (!valid_a && !valid_b) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (!valid_b || (valid_a && snapshot_a.sequence > snapshot_b.sequence)) {
+        *snapshot = snapshot_a;
+    } else {
+        *snapshot = snapshot_b;
+    }
+    latest_position_snapshot_sequence = snapshot->sequence;
     return ESP_OK;
 }
 
@@ -326,6 +438,19 @@ esp_err_t fram_load_encoder_data(fram_encoder_data_t *encoder_data) {
         ESP_LOGE(TAG, "Failed to load rest angle: %s", esp_err_to_name(ret));
         return ret;
     }
+
+    ret = fram_read_float(FRAM_ADDR_PWM_ANGLE_AT_LAST_SAVE, &encoder_data->pwm_angle_at_last_save);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load paired PWM angle: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = fram_read_byte(FRAM_ADDR_PWM_SAVE_VALID, &calibrated_byte);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load PWM save validity: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    encoder_data->pwm_save_valid = (calibrated_byte == 1);
 
     // Load calibration flag
     ret = fram_read_byte(FRAM_ADDR_CALIBRATED_FLAG, &calibrated_byte);
@@ -399,7 +524,9 @@ esp_err_t fram_clear_encoder_data(void) {
         .calibration_offset = 0.0f,
         .pwm_calibration_angle = 0.0f,
         .rest_angle = 0.0f,
+        .pwm_angle_at_last_save = 0.0f,
         .calibrated = false,
+        .pwm_save_valid = false,
         .boot_count = 0,
         .last_save_time = 0
     };
