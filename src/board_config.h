@@ -60,7 +60,7 @@
 
   // Control parameters
   #define CONTROL_CHANNEL 4
-  #define REST_ANGLE 145.0f
+  #define REST_ANGLE 0.0f
   #define MIN_ANGLE -150.0f
   #define MAX_ANGLE 150.0f
   #define MAX_VEL 6300.0f  // Maximum velocity for position commands

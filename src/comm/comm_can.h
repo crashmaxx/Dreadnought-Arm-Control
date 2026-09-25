@@ -29,6 +29,7 @@ void comm_can_start(int pin_tx, int pin_rx);
 void comm_can_stop(void);
 int comm_can_get_rx_recovery_cnt(void);
 int comm_can_get_tx_drop_cnt(void);
+uint32_t comm_can_get_last_tx_time_ms(void);
 void comm_can_use_vesc_decoder(bool use_vesc_dec);
 CAN_BAUD comm_can_kbits_to_baud(int kbits);
 void comm_can_update_baudrate(int delay_msec);

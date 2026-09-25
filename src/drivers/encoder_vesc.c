@@ -142,12 +142,9 @@ static bool vesc_encoder_set_zero_position(float target_angle_deg) {
     // This tells the VESC "your current position should be considered as this many revolutions"
     float target_vesc_revolutions = target_angle_deg * GEAR_RATIO / 360.0f;
     
-    // Send calibration command to VESC
+    // Send calibration command to VESC.
     // This updates the VESC's internal position offset so that the current position
-    // reads as target_vesc_revolutions instead of the current raw encoder value
-    // NOTE: Wait for safe CAN slot to ensure command is received
-    extern void wait_for_safe_can_slot(void);  // Import from main.c
-    wait_for_safe_can_slot();
+    // reads as target_vesc_revolutions instead of the current raw encoder value.
     comm_can_update_pid_pos_offset(CAN_VESC_ID, target_vesc_revolutions, true);
     
     ESP_LOGI(TAG, "Sent calibration command to VESC ID %d", CAN_VESC_ID);

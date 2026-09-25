@@ -98,6 +98,7 @@ static volatile bool use_vesc_decoder = true;
 
 static volatile int rx_recovery_cnt = 0;
 static volatile int tx_drop_cnt = 0;
+static volatile uint32_t last_tx_time_ms = 0;
 
 // Private functions
 static void update_baud(CAN_BAUD baudrate);
@@ -871,6 +872,10 @@ int comm_can_get_tx_drop_cnt(void) {
 	return tx_drop_cnt;
 }
 
+uint32_t comm_can_get_last_tx_time_ms(void) {
+	return last_tx_time_ms;
+}
+
 void comm_can_use_vesc_decoder(bool use_vesc_dec) {
 	use_vesc_decoder = use_vesc_dec;
 }
@@ -1026,6 +1031,7 @@ static void transmit_frame(const twai_frame_t *frame) {
 	}
 
 	if (twai_node_transmit(can_node_handle, frame, timeout) == ESP_OK) {
+		last_tx_time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
 		(void)twai_node_transmit_wait_all_done(can_node_handle, timeout);
 	} else {
 		tx_drop_cnt++;

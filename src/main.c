@@ -129,7 +129,6 @@ static uint32_t last_vesc_config_update = 0;
 static uint8_t vesc_config_step = 0;
 
 // Forward declarations
-void wait_for_safe_can_slot(void);
 static float get_control_target_angle(void);
 
 #if DEBUG_ESPNOW_TEST
@@ -170,8 +169,6 @@ void update_vesc_motion_parameters(uint32_t current_time) {
         ESP_LOGI(TAG, "[VESC] Updating VESC motion parameters");
         #endif
 
-        wait_for_safe_can_slot();
-
     switch (vesc_config_step) {
     case 0:
         comm_can_set_max_sp_vel(CAN_VESC_ID, MAX_VEL);
@@ -200,9 +197,6 @@ void update_vesc_motion_parameters(uint32_t current_time) {
     }
 }
 
-// CAN bus timing coordination
-static uint32_t can_command_offset_ms = 5;  // Offset commands by 5ms to avoid 50Hz status collisions
-
 // Debug macros (main.c specific)
 #if DEBUG_POSITION_CONTROL
 #define DEBUG_POS(fmt, ...) ESP_LOGI(TAG, "[POS] " fmt, ##__VA_ARGS__)
@@ -227,23 +221,6 @@ static uint32_t can_command_offset_ms = 5;  // Offset commands by 5ms to avoid 5
 #else
 #define DEBUG_CAN_CMD(fmt, ...)
 #endif
-
-// CAN timing coordination - wait for safe slot to send commands
-// This prevents collisions with VESC's 50Hz status messages
-void wait_for_safe_can_slot(void) {
-    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    
-    // Calculate time within the 20ms status message cycle (50Hz = 20ms period)
-    uint32_t cycle_time = current_time % 20;
-    
-    // If we're too close to when status messages are sent (0-5ms or 15-20ms), wait
-    if (cycle_time < can_command_offset_ms || cycle_time > (20 - can_command_offset_ms)) {
-        uint32_t wait_time = can_command_offset_ms - cycle_time;
-        if (wait_time > 10) wait_time = can_command_offset_ms; // Handle wrap-around
-        
-        vTaskDelay(pdMS_TO_TICKS(wait_time));
-    }
-}
 
 // VESC position tracking for fallback control when encoder is invalid
 bool is_vesc_tracking_valid(uint32_t current_time) {
@@ -725,20 +702,21 @@ void crsf_control_task(void *pvParameters) {
     while (1) {
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-        // Periodic CAN ping gives explicit RX/TX health feedback even before STATUS_4 arrives.
+        // Periodic CAN ping gives explicit RX/TX health feedback when control has been idle.
         if ((current_time - last_can_ping) >= 500) {
-            HW_TYPE hw_type = HW_TYPE_VESC;
-            bool ping_ok = comm_can_ping(CAN_VESC_ID, &hw_type);
-
-            if (!ping_ok && (current_time - last_ping_warning) >= 2000) {
-                ESP_LOGW(TAG, "CAN ping timeout to VESC ID %d (no PONG)", CAN_VESC_ID);
-                last_ping_warning = current_time;
-            } else if (ping_ok && (current_time - last_ping_ok_log) >= 5000) {
-                ESP_LOGI(TAG, "CAN ping OK from VESC ID %d", CAN_VESC_ID);
-                last_ping_ok_log = current_time;
-            }
-
             last_can_ping = current_time;
+            if ((current_time - comm_can_get_last_tx_time_ms()) >= 500) {
+                HW_TYPE hw_type = HW_TYPE_VESC;
+                bool ping_ok = comm_can_ping(CAN_VESC_ID, &hw_type);
+
+                if (!ping_ok && (current_time - last_ping_warning) >= 2000) {
+                    ESP_LOGW(TAG, "CAN ping timeout to VESC ID %d (no PONG)", CAN_VESC_ID);
+                    last_ping_warning = current_time;
+                } else if (ping_ok && (current_time - last_ping_ok_log) >= 5000) {
+                    ESP_LOGI(TAG, "CAN ping OK from VESC ID %d", CAN_VESC_ID);
+                    last_ping_ok_log = current_time;
+                }
+            }
         }
 
         // VESC sends status messages automatically - we just check if we have recent data
@@ -993,9 +971,6 @@ void main_process_control_logic(void) {
     uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
     static uint32_t last_can_cmd_debug = 0;
     static uint32_t last_position_debug = 0;
-    static uint32_t last_pos_cmd_time = 0;
-    static float last_pos_cmd_revs = 0.0f;
-    static bool pos_cmd_initialized = false;
 
     // These are VESC configuration commands, not position commands. Send them
     // even when control is disarmed or the current target needs no update.
@@ -1007,16 +982,12 @@ void main_process_control_logic(void) {
         if (startup_pid_offset_sync_waiting_status4) {
             if (latest_status4_rx_tick == startup_pid_offset_status4_tick_at_send) {
                 // Keep motor disabled while waiting for post-sync status.
-                wait_for_safe_can_slot();
                 comm_can_set_current(CAN_VESC_ID, 0.0f);
                 return;
             }
 
             startup_pid_offset_sync_waiting_status4 = false;
             arm_transition_hold_until_ms = current_time + 300;
-            last_pos_cmd_time = current_time;
-            last_pos_cmd_revs = vesc_current_position;
-            pos_cmd_initialized = false;
             ESP_LOGI(TAG, "Startup sync: STATUS_4 refreshed after PID offset update");
         }
 
@@ -1031,7 +1002,6 @@ void main_process_control_logic(void) {
                 if (encoder_is_valid()) {
                     float current_joint_deg = get_calibrated_encoder_angle_deg();
                     float target_vesc_revolutions = current_joint_deg * GEAR_RATIO / 360.0f;
-                    wait_for_safe_can_slot();
                     // Runtime-only sync to avoid unnecessary persistent writes on every reboot.
                     comm_can_update_pid_pos_offset(CAN_VESC_ID, target_vesc_revolutions, false);
                     startup_pid_offset_status4_tick_at_send = latest_status4_rx_tick;
@@ -1043,7 +1013,6 @@ void main_process_control_logic(void) {
                 }
             } else {
                 // No startup sync needed: hold current VESC position for one control frame.
-                wait_for_safe_can_slot();
                 comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_current_position, MAX_VEL);
             }
 
@@ -1052,7 +1021,6 @@ void main_process_control_logic(void) {
 
         // Hold briefly after arm transition so status data can settle before normal control.
         if (current_time < arm_transition_hold_until_ms) {
-            wait_for_safe_can_slot();
             comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_current_position, MAX_VEL);
             return;
         }
@@ -1097,29 +1065,12 @@ void main_process_control_logic(void) {
             // Calculate new target position for VESC (in revolutions)
             float vesc_target_position_revolutions = vesc_current_position - gear_compensated_error;
             
-            // Send position command to VESC (wait for safe CAN slot to avoid collisions)
-            wait_for_safe_can_slot();
-
-            // Limit position command rate and skip tiny changes to avoid flooding custom firmware handlers.
-            bool interval_elapsed = (current_time - last_pos_cmd_time) >= 25;  // max 40 Hz
-            float pos_delta = vesc_target_position_revolutions - last_pos_cmd_revs;
-            if (pos_delta < 0.0f) {
-                pos_delta = -pos_delta;
-            }
-            bool meaningful_change = (!pos_cmd_initialized) || (pos_delta >= 0.002f);
-            if (!(interval_elapsed && meaningful_change)) {
-                return;
-            }
-            
             // Rate limit CAN command debug to every 2 seconds
             if (current_time - last_can_cmd_debug > 2000) {
                 DEBUG_CAN_CMD("CMD_ID=%d (SET_POS_FLOATINGPOINT) to VESC_ID=%d, pos=%.6f, max_vel=%.1f", CAN_PACKET_SET_POS_FLOATINGPOINT, CAN_VESC_ID, vesc_target_position_revolutions, MAX_VEL);
                 last_can_cmd_debug = current_time;
             }
             comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_target_position_revolutions, MAX_VEL);
-            last_pos_cmd_time = current_time;
-            last_pos_cmd_revs = vesc_target_position_revolutions;
-            pos_cmd_initialized = true;
             
             // Save current encoder angle to FRAM after each CAN position command
             #if FRAM_ENABLE
@@ -1165,7 +1116,6 @@ void main_process_control_logic(void) {
         } else {
             // No valid VESC position - SAFETY: stop motor (wait for safe CAN slot)
             ESP_LOGW(TAG, "[SAFETY] No valid VESC position data - stopping motor for safety");
-            wait_for_safe_can_slot();
             DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [NO_POSITION_STOP]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
             comm_can_set_current(CAN_VESC_ID, 0.0f);
             // Rate limit safety debug messages to every 1 second
@@ -1229,7 +1179,6 @@ void main_process_control_logic(void) {
         
         // Disarmed or no connection - send zero current command IMMEDIATELY for safety
         // Send at a bounded rate to keep safety behavior while avoiding CAN TX queue flooding.
-        wait_for_safe_can_slot();
         static uint32_t last_disarmed_debug = 0;
         static uint32_t last_disarmed_current_cmd = 0;
         if (current_time - last_disarmed_debug > 2000) { // Debug every 2 seconds, but command every time
