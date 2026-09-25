@@ -75,8 +75,13 @@ void spi_bb_transfer_8(
 		const uint8_t *out_buf,
 		int length
 		) {
+#if ENCODER_SPI_MOSI_ALWAYS_HIGH
+	(void)out_buf;
+#endif
 	for (int i = 0; i < length; i++) {
+	#if !ENCODER_SPI_MOSI_ALWAYS_HIGH
 		uint8_t send = out_buf ? out_buf[i] : 0xFF;
+	#endif
 		uint8_t receive = 0;
 
 		for (int bit = 0; bit < 8; bit++) {
@@ -126,8 +131,13 @@ void spi_bb_transfer_16(
 		const uint16_t *out_buf, 
 		int length
 		) {
+#if ENCODER_SPI_MOSI_ALWAYS_HIGH
+	(void)out_buf;
+#endif
 	for (int i = 0; i < length; i++) {
+	#if !ENCODER_SPI_MOSI_ALWAYS_HIGH
 		uint16_t send = out_buf ? out_buf[i] : 0xFFFF;
+	#endif
 		uint16_t receive = 0;
 
 		for (int bit = 0; bit < 16; bit++) {

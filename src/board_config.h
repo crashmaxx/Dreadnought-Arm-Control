@@ -4,13 +4,13 @@
 // =============================================================================
 // BOARD SELECTION - Uncomment ONE board type for your specific robot joint
 // =============================================================================
-//#define BOARD_LEFT_CLAW
+#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
 //#define BOARD_LEFT_ELBOW
 //#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
-#define BOARD_LEFT_SHOULDER
+//#define BOARD_LEFT_SHOULDER
 //#define BOARD_RIGHT_SHOULDER
 //#define BOARD_LEFT_SHOULDER_DEMO
 //#define BOARD_CUSTOM
@@ -35,22 +35,24 @@
 
 #ifdef BOARD_LEFT_CLAW
   #define BOARD_NAME "Left_Claw"
-  #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE
-  #define ENCODER_A_PIN 7       // CS (Blue)
-  #define ENCODER_B_PIN 6       // MOSI (Yellow)
-  #define ENCODER_PWM_PIN 5     // MISO (White)
-  // #define ENCODER_I_PIN 4   // CLK (Green) - Not used for quadrature only
-  #define ENCODER_PPR 4096
-  #define ENCODER_PWM_MIN_US 0     // 0v = 0°
-  #define ENCODER_PWM_MAX_US 1020  // 359° at max
+  #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
+
+  // SPI pins for magnetic encoder
+  #define ENCODER_SPI_MOSI_PIN 11  // Master Out Slave In (White)
+  #define ENCODER_SPI_CLK_PIN 10   // Clock (Blue)
+  #define ENCODER_SPI_MISO_PIN 9  // Master In Slave Out (Yellow)
+  #define ENCODER_SPI_CS_PIN 8    // Chip Select (Green)
+  
+  // SPI MOSI behavior configuration
+  #define ENCODER_SPI_MOSI_ALWAYS_HIGH 1  // 0=normal SPI commands, 1=keep MOSI high
   
   // CAN Configuration
   #define CAN_VESC_ID 0
   #define CAN_ESP32_ID 4
 
   // CAN bus pins
-  #define CAN_TX_GPIO_NUM 13       // CAN TX pin for ESP32-S3
-  #define CAN_RX_GPIO_NUM 12       // CAN RX pin for ESP32-S3
+  #define CAN_TX_GPIO_NUM 6       // CAN TX pin for ESP32-S3
+  #define CAN_RX_GPIO_NUM 7       // CAN RX pin for ESP32-S3
 
   // CRSF pins
   #define CRSF_TX_PIN 2
@@ -67,14 +69,14 @@
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
  //FRAM configuration I2C pins
-  #define FRAM_ENABLE 0
-  #define FRAM_I2C_SDA_PIN 3    // SDA pin for ESP32-S3  
-  #define FRAM_I2C_SCL_PIN 4    // SCL pin for ESP32-S3
+  #define FRAM_ENABLE 1
+  #define FRAM_I2C_SDA_PIN 4    // SDA pin for ESP32-S3  
+  #define FRAM_I2C_SCL_PIN 5    // SCL pin for ESP32-S3
   #define FRAM_I2C_FREQ_HZ 400000 // I2C frequency for FRAM
   #define FRAM_I2C_ADDRESS 0x50   // I2C address for FRAM
 
   // ESP-NOW telemetry configuration
-  #define ESP_NOW_TELEMETRY_ENABLE 0
+  #define ESP_NOW_TELEMETRY_ENABLE 1
 
 #endif
 
@@ -329,7 +331,7 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
-  #define REST_ANGLE 20.0f
+  #define REST_ANGLE -20.0f
   #define MIN_ANGLE -60.0f
   #define MAX_ANGLE 60.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
