@@ -32,7 +32,21 @@ I am using a fork of the VESC firmware that supports motor position control beyo
 
 https://github.com/ElwinBoots/bldc/tree/elwin-dev
 
-The [VESC_Express_Encoder_CRSF_Control](VESC_Express_Encoder_CRSF_Control) section has the relevant code for controlling the VESC over CANBUS. The readme files are mostly AI generated, so there could be a lot wrong, outdated, or irrelevant.
+The VESC CAN control implementation is in `src/`, with the main control loop in `src/main.c`. The documentation below and in the encoder guide describes the current implementation.
+
+## Joint Position And Limits
+
+For an SPI AS504x joint encoder, the sensor supplies a raw single-turn angle from 0 degrees up to (but not including) 360 degrees. The firmware tracks consecutive verified readings and counts crossings of the 0/360 degree boundary, so the control loop receives a multi-turn joint angle. A reading of 430 degrees is therefore preserved as 430 degrees rather than being treated as 70 degrees.
+
+`MIN_ANGLE` and `MAX_ANGLE` in `src/board_config.h` constrain the target generated from the transmitter; they do not clamp encoder feedback or disable the motor when feedback temporarily exceeds the configured range. This lets the controller correct normal overshoot.
+
+For example, with `MIN_ANGLE = 0`, `MAX_ANGLE = 420`, and `REST_ANGLE = 210`:
+
+1. The transmitter requests a target of 410 degrees.
+2. The joint overshoots to 430 degrees. The AS504x raw reading is approximately 70 degrees, while the tracked joint reading remains 430 degrees.
+3. The control error is $410 - 430 = -20$ degrees, so the VESC receives a command that moves the joint back toward 410 degrees using the configured gear ratio.
+
+`REST_ANGLE` is used when the operator performs encoder calibration; it is not part of the normal transmitter-to-target mapping. The multi-turn tracker relies on continuous valid samples, so it cannot infer complete turns that happen while the controller is powered off.
 
 ## CANBUS
 

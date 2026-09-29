@@ -81,6 +81,7 @@ void enc_as504x_deinit(AS504x_config_t *cfg) {
 
 void enc_as504x_routine(AS504x_config_t *cfg) {
 	uint16_t pos;
+	cfg->state.angle_valid = false;
 
 	float timestep = UTILS_AGE_S(cfg->state.last_update_time);
 	if (timestep > 1.0) {
@@ -178,6 +179,7 @@ void enc_as504x_routine(AS504x_config_t *cfg) {
 	if (parity_ok && !cfg->state.spi_data_err_raised) {
 		pos &= 0x3FFF;
 		cfg->state.last_enc_angle = ((float) pos * 360.0) / 16384.0;
+		cfg->state.angle_valid = true;
 		UTILS_LP_FAST(cfg->state.spi_error_rate, 0.0, timestep);
 		
 		// Debug: Log successful angle calculation occasionally
@@ -199,16 +201,6 @@ void enc_as504x_routine(AS504x_config_t *cfg) {
 					 pos, parity_ok, cfg->state.spi_data_err_raised);
 		}
 		
-		// TEMPORARY: Calculate angle anyway to test if parity is the only issue
-		if (pos != 0x0000 && pos != 0xFFFF && !cfg->state.spi_data_err_raised) {
-			uint16_t test_pos = pos & 0x3FFF;
-			float test_angle = ((float) test_pos * 360.0) / 16384.0;
-			cfg->state.last_enc_angle = test_angle;
-			
-			if (parity_debug_count % 50 == 1) {
-				DEBUG_VERBOSE_LOG(TAG, "BYPASS: Using angle despite parity failure: %.2f°", test_angle);
-			}
-		}
 	}
 }
 

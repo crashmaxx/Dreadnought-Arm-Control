@@ -1,234 +1,60 @@
-# VESC Express Encoder CRSF Control
+# Encoder And Joint Position Control
 
-This project provides CRSF (Crossfire) remote control integration with modular encoder support for VESC motor controllers using an ESP32-C3.
+The ESP32 reads joint feedback, maps the active CRSF channel to a joint-angle target, and sends a position target in motor revolutions to the VESC over CAN. The VESC performs the motor-side position control; the ESP32 repeatedly corrects the VESC target from joint feedback.
 
-## Features
+## Configuration
 
-- **CRSF Protocol Support**: Receives 16-channel RC data at 420kbps from ExpressLRS/Crossfire transmitters
-- **Modular Encoder System**: Support for multiple encoder types with board configuration switching
-- **ESP-NOW Telemetry**: Wireless telemetry transmission for real-time monitoring and data logging
-- **VESC CAN Integration**: Sends motor control commands via CAN bus to VESC controllers
-- **Safety Features**: Arm/disarm switch, failsafe handling, connection monitoring
-- **Board Configuration**: Support for Claw_Control board configurations and parameters
+Select exactly one board at the top of `src/board_config.h`. Each board block defines its encoder type and pins, CAN IDs, CRSF pins, control channel, joint range, motion limits, gear ratio, and optional FRAM settings.
 
-## Supported Encoder Types
+The encoder types currently selected by board configuration are:
 
-The system supports multiple encoder types that can be selected via board configuration:
+- `ENCODER_TYPE_SPI_MAGNETIC` for AS504x SPI encoders
+- `ENCODER_TYPE_PWM_MAGNETIC` for PWM magnetic encoders
+- `ENCODER_TYPE_QUADRATURE` for incremental encoders
+- `ENCODER_TYPE_DUAL_HYBRID` for PWM plus quadrature feedback
+- `ENCODER_TYPE_VESC_INTERNAL` for VESC position feedback
 
-### 1. PWM Magnetic Encoders
-- **Use Case**: Absolute position sensing with magnetic sensors
-- **Interface**: Single PWM signal (pulse width encodes angle)
-- **Configuration**: Set `ENCODER_TYPE` to `ENCODER_TYPE_PWM` in `board_config.h`
-- **Pins**: Configure `ENCODER_PWM_PIN` in board config
+## SPI AS504x Position Tracking
 
-### 2. Quadrature Encoders  
-- **Use Case**: High-resolution incremental position sensing
-- **Interface**: Two-phase quadrature signals (A/B channels)
-- **Configuration**: Set `ENCODER_TYPE` to `ENCODER_TYPE_QUADRATURE` in `board_config.h`
-- **Pins**: Configure `ENCODER_A_PIN` and `ENCODER_B_PIN` in board config
-- **Features**: 4x encoding, overflow handling, configurable PPR
+An AS504x reports one absolute turn, from 0 degrees up to (but not including) 360 degrees. The SPI encoder wrapper extends this to a multi-turn angle by counting boundary crossings:
 
-### 3. Dual Hybrid Encoders
-- **Use Case**: Combines PWM absolute reference with quadrature precision (like Claw_Control project)
-- **Interface**: PWM + Quadrature (3 pins total)
-- **Configuration**: Set `ENCODER_TYPE` to `ENCODER_TYPE_DUAL_HYBRID` in `board_config.h`
-- **Benefits**: Absolute position reference + high-resolution incremental tracking
+- A change from near 360 degrees to near 0 degrees increments the turn count.
+- A change from near 0 degrees to near 360 degrees decrements the turn count.
+- The reported joint angle is the raw angle plus `turn_count * 360` degrees.
 
-### 4. Extensible Interface
-- Additional encoder types can be easily added:
-  - SPI encoders (magnetic, optical)
-  - I2C encoders (magnetic, IMU-based)
-  - Hall sensor arrays
-  - Custom protocols
+Every sample must pass the AS504x parity check before it can change the raw angle, turn count, velocity, or position. A failed sample makes the encoder update fail so the control loop can use its existing VESC-feedback fallback only when that fallback is fresh. The hardware reading of exactly 0 degrees remains a legitimate angle.
 
-## Board Configuration
+The boundary detector assumes adjacent valid samples differ by less than 270 degrees. It tracks turns while powered, but it cannot know how many complete turns occurred while the controller was unpowered.
 
-Encoder type and pin assignments are configured in `src/board_config.h`:
+## Targets, Calibration, And Overshoot
 
-```c
-// Select your board type
-#define BOARD_TYPE BOARD_VESC_EXPRESS_DEFAULT
+The active CRSF control channel is normalized to $[-1, 1]$, then mapped linearly to the configured target range:
 
-// This automatically configures:
-// - ENCODER_TYPE (PWM, Quadrature, Dual Hybrid, etc.)
-// - GPIO pin assignments
-// - Encoder-specific parameters (PPR, pulse width ranges, etc.)
-// - Control parameters (PID gains, angle limits)
-// - ESP-NOW peer MAC address for telemetry
-```
+$$
+target = MIN\_ANGLE + \frac{input + 1}{2}(MAX\_ANGLE - MIN\_ANGLE)
+$$
 
-### Predefined Board Configurations
+`MIN_ANGLE` and `MAX_ANGLE` bound this target only. Encoder feedback is intentionally not clamped to the target range, because feedback outside that range can be a normal transient after an overshoot. `REST_ANGLE` is used only when the operator calibrates the encoder, setting the current physical joint position to that reference.
 
-#### VESC Express Boards
-1. **BOARD_VESC_EXPRESS_DEFAULT**: PWM encoder on GPIO 4
-2. **BOARD_VESC_EXPRESS_QUAD**: Quadrature encoder on GPIO 4/5
-3. **BOARD_VESC_EXPRESS_DUAL**: Dual hybrid encoder on GPIO 4/5/6
+Example with `MIN_ANGLE = 0`, `MAX_ANGLE = 420`, and `REST_ANGLE = 210`:
 
-#### Claw Control Boards (from original project)
-4. **BOARD_LEFT_CLAW**: Dual hybrid encoder, Channel 4 control, Kp=1.2
-5. **BOARD_RIGHT_CLAW**: Dual hybrid encoder, Channel 4 control, Kp=1.2
-6. **BOARD_LEFT_ELBOW**: Dual hybrid encoder, Channel 3 control, Kp=1.0
-7. **BOARD_RIGHT_ELBOW**: Dual hybrid encoder, Channel 3 control, Kp=1.0
-8. **BOARD_LEFT_UPPER**: Dual hybrid encoder, Channel 2 control, Kp=0.8, ±90° range
-9. **BOARD_RIGHT_UPPER**: Dual hybrid encoder, Channel 2 control, Kp=0.8, ±90° range
-10. **BOARD_CUSTOM**: Define your own configuration
+1. The transmitter requests 410 degrees.
+2. The joint moves past the target to 430 degrees.
+3. The AS504x raw value is approximately 70 degrees, but multi-turn tracking reports 430 degrees.
+4. The control error is $410 - 430 = -20$ degrees, so the next VESC position command corrects 20 degrees back toward 410 degrees.
 
-### Adding Custom Board Configurations
+## Control And Safety Behavior
 
-```c
-#elif BOARD_TYPE == BOARD_YOUR_CUSTOM_BOARD
-    #define BOARD_NAME "Your Custom Board"
-    #define ENCODER_TYPE ENCODER_TYPE_QUADRATURE
-    #define ENCODER_A_PIN 10
-    #define ENCODER_B_PIN 11
-    #define ENCODER_PPR 1024
-    
-    // Control parameters
-    #define CONTROL_CHANNEL 3
-    #define DEFAULT_KP 1.0f
-    #define DEFAULT_KI 0.02f
-    #define DEFAULT_KD 0.10f
-    #define MIN_ANGLE 0.0f
-    #define MAX_ANGLE 359.0f
-    
-    // ESP-NOW peer MAC address
-    #define PEER_MAC_ADDR {0x18, 0x8B, 0x0E, 0xFF, 0x02, 0xE4}
-    // Add any other board-specific settings
-#endif
-```
+Normal closed-loop commands require an armed and connected CRSF receiver, fresh VESC position data, and either a valid encoder update or a fresh VESC tracking fallback. A CRSF disconnect or disarm sends zero current. Invalid encoder samples are rejected; they are never used to advance multi-turn position.
 
-## ESP-NOW Telemetry
+The control task runs at the rate configured by `CRSF_CONTROL_UPDATE_RATE_HZ` in `src/comm/crsf_config.h`, currently 100 Hz. Arm/disarm uses CRSF AUX1 (physical channel 5) by default.
 
-The system includes wireless telemetry using ESP-NOW protocol for real-time monitoring:
+## Build And Flash
 
-### Telemetry Features
-- **Real-time Data Transmission**: Encoder position, velocity, system status
-- **Low Latency**: ESP-NOW provides faster transmission than WiFi
-- **Multiple Peers**: Support for multiple receiving devices
-- **Configurable Data Types**: Encoder, control, status, CRSF channel data
+This repository uses PlatformIO with ESP-IDF. The configured environment is `lolin_s3_mini`.
 
-### Telemetry Configuration
-Configure telemetry in `src/esp_now_telemetry_config.h`:
-
-```c
-#define ESP_NOW_TELEMETRY_ENABLE    1
-#define ESP_NOW_WIFI_CHANNEL        1
-#define ESP_NOW_TELEMETRY_RATE_MS   100  // Send every 100ms
-```
-
-### Predefined Telemetry Types
-- **ENCODER**: Position (degrees), velocity (deg/s), validity status
-- **STATUS**: Armed state, CRSF connection, error count
-- **CONTROL**: Setpoint, PID output, position error
-- **CRSF**: Channel values from remote control
-
-### Usage Example
-```c
-// Send encoder data
-TELEMETRY_SEND_ENCODER(encoder_get_angle_deg(), 
-                      encoder_get_velocity_deg_s(), 
-                      encoder_is_valid());
-
-// Send system status
-TELEMETRY_SEND_STATUS(crsf_is_armed(), crsf_is_connected(), error_count);
-```
-
-## CRSF Configuration
-
-CRSF settings are configured in `src/crsf_config.h`:
-
-- **Channel 5**: Arm/disarm switch (confirmed)
-- **Throttle Channel**: Configurable for current control
-- **Baudrate**: 420000 bps (standard for ExpressLRS)
-- **GPIO Pins**: TX/RX pins for UART communication
-
-## Usage Example
-
-The main control loop integrates both CRSF input and encoder feedback:
-
-```c
-// Update both systems
-crsf_update();
-encoder_update();
-
-// Check encoder status
-if (encoder_is_valid()) {
-    float position = encoder_get_angle_deg();
-    float velocity = encoder_get_velocity_deg_s();
-    
-    // Use encoder data for closed-loop control
-    // Example: Position control based on RC input
-    float target_position = crsf_channel_to_normalized(channel) * 360.0f;
-    float error = target_position - position;
-    // Apply PID control...
-}
-
-// Check CRSF status and send motor commands
-if (crsf_is_connected() && crsf_is_armed()) {
-    float current = calculate_motor_current(); // Your control logic
-    comm_can_set_current(VESC_CONTROLLER_ID, current);
-}
-```
-
-## Building and Flashing
-
-This project uses PlatformIO with ESP-IDF framework:
-
-```bash
-# Build the project
+```powershell
 pio run
-
-# Flash to ESP32-C3
 pio run --target upload
-
-# Monitor serial output
 pio device monitor
 ```
-
-## Hardware Setup
-
-1. **ESP32-C3 Development Board**
-2. **CRSF/ExpressLRS Receiver**: Connect to configured UART pins
-3. **Encoder**: Connect based on selected encoder type and board configuration
-4. **CAN Transceiver**: For VESC communication (if using CAN)
-5. **Power Supply**: 3.3V for ESP32, appropriate voltage for peripherals
-
-## Debugging
-
-The system provides comprehensive logging:
-
-- **CRSF Status**: Connection state, channel values, failsafe status
-- **Encoder Status**: Position, velocity, error counts, validity
-- **Control Output**: Motor commands, safety state
-
-Enable/disable logging levels in the respective config files.
-
-## Safety Features
-
-- **Arm/Disarm Switch**: Channel 5 controls system arming
-- **Connection Monitoring**: Detects CRSF link loss
-- **Failsafe Behavior**: Configurable response to signal loss
-- **Encoder Validation**: Monitors encoder health and error counts
-
-## Extending the System
-
-### Adding New Encoder Types
-
-1. Create new encoder implementation file (e.g., `encoder_spi.c`)
-2. Implement the `encoder_interface_t` structure
-3. Add new encoder type to `encoder_interface.h`
-4. Update board configuration options
-5. Update the encoder selection logic in `encoder_interface.c`
-
-### Adding Control Algorithms
-
-The modular design makes it easy to add:
-- PID position control
-- Velocity control
-- Advanced control algorithms (LQR, MPC, etc.)
-- Multi-axis control
-- Custom safety logic
-
-## Based On
-
-This project extends the VESC Express firmware and incorporates encoder functionality from the Claw_Control_Rev_Encoder_PPM_AutoTune project, making it modular and configurable for different hardware setups.

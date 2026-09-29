@@ -137,11 +137,14 @@ static bool spi_encoder_update_impl(void) {
         return false;
     }
     
-    // Run the AS504x routine to update internal state
+    // Read one verified AS504x sample for this update.
     enc_as504x_routine(&spi_encoder_config);
-    
-    // Get angle data directly - this is what actually matters
-    float new_angle_deg = enc_as504x_read_angle(&spi_encoder_config);
+    if (!spi_encoder_config.state.angle_valid) {
+        error_count++;
+        return false;
+    }
+
+    float new_angle_deg = spi_encoder_config.state.last_enc_angle;
     
     // Debug: Log the raw angle reading periodically and multi-turn info
     static uint32_t debug_counter = 0;

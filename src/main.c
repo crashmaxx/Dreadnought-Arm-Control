@@ -265,6 +265,7 @@ static float absf_local(float x) {
     return (x < 0.0f) ? -x : x;
 }
 
+#if ENCODER_TYPE == ENCODER_TYPE_DUAL_HYBRID
 // Return angle adjusted by integer turns so it is closest to ref_deg.
 static float wrap_angle_near_reference(float angle_deg, float ref_deg) {
     while ((angle_deg - ref_deg) > 180.0f) {
@@ -275,6 +276,7 @@ static float wrap_angle_near_reference(float angle_deg, float ref_deg) {
     }
     return angle_deg;
 }
+#endif
 
 // Reconcile restored calibration offset with the current raw encoder reading.
 // This preserves angle continuity across reboot by selecting the nearest turn-equivalent offset.
@@ -1039,8 +1041,6 @@ void main_process_control_logic(void) {
             if (using_encoder_feedback) {
                 // Use encoder feedback for closed-loop control
                 current_position_degrees = get_calibrated_encoder_angle_deg();
-                // Avoid multi-turn jumps after reboot by comparing on the nearest equivalent turn.
-                current_position_degrees = wrap_angle_near_reference(current_position_degrees, crsf_target_degrees);
             } else if (is_vesc_tracking_valid(current_time)) {
                 // Use VESC position tracking as fallback
                 current_position_degrees = get_vesc_fallback_position_degrees();
@@ -1142,7 +1142,6 @@ void main_process_control_logic(void) {
             
             if (using_encoder_feedback) {
                 current_position_degrees = get_calibrated_encoder_angle_deg();
-                current_position_degrees = wrap_angle_near_reference(current_position_degrees, crsf_target_degrees);
             } else if (is_vesc_tracking_valid(current_time)) {
                 current_position_degrees = get_vesc_fallback_position_degrees();
             } else {

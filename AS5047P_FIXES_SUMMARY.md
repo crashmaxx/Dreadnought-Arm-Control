@@ -56,7 +56,13 @@ spi_bb_transfer_16(&(cfg->sw_spi), &pos, 0, 1);        // Read response
 1. Send angle read command (0x7FFF)
 2. Wait for response preparation
 3. Read angle response directly
-4. Basic validity checking (not 0x0000 or 0xFFFF)
+4. Require valid response parity before accepting the angle
+
+## Current Position Handling
+
+The AS5047P provides a single-turn reading from 0 degrees up to (but not including) 360 degrees. `encoder_spi.c` extends it to a multi-turn joint angle by counting verified crossings of the 0/360 degree boundary. A parity failure does not change the tracked angle or turn count.
+
+`MIN_ANGLE` and `MAX_ANGLE` limit the requested transmitter target, not measured feedback. Feedback may temporarily exceed the target range after an overshoot so the controller can command a correction back to the target.
 
 ## Expected Behavior After Fixes
 
@@ -75,9 +81,8 @@ spi_bb_transfer_16(&(cfg->sw_spi), &pos, 0, 1);        // Read response
 ```
 
 ## Configuration Status
-- **MOSI Always High:** `ENCODER_SPI_MOSI_ALWAYS_HIGH = 1`
-- **Board:** `BOARD_LEFT_SHOULDER`
-- **Pins:** CS=10, MOSI=11, CLK=12, MISO=13
+
+Encoder pins and `ENCODER_SPI_MOSI_ALWAYS_HIGH` are defined by the selected board block in `src/board_config.h`. Check that file rather than relying on fixed pin values in this historical note.
 
 ## Next Steps
 1. **Upload the fixed firmware**

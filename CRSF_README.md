@@ -13,24 +13,24 @@ This implementation adds CRSF (Crossfire) protocol support to the VESC Express p
 
 ## Hardware Connections
 
-Connect your CRSF receiver to the ESP32-C3:
+Connect the receiver TX line to the ESP32 pin configured as `CRSF_RX_PIN`, and connect the receiver RX line to `CRSF_TX_PIN` only when bidirectional receiver communication is needed. The active board block in `src/board_config.h` defines these pins.
 
-| CRSF Receiver | ESP32-C3 Pin | Description |
-|---------------|--------------|-------------|
-| TX            | GPIO 3       | CRSF data output from receiver |
-| RX            | GPIO 2       | CRSF data input to receiver (optional) |
-| VCC           | 3.3V or 5V   | Power supply |
-| GND           | GND          | Ground |
+| CRSF Receiver | ESP32 pin | Description |
+|---------------|-----------|-------------|
+| TX            | `CRSF_RX_PIN` | CRSF data output from receiver |
+| RX            | `CRSF_TX_PIN` | Optional data to receiver |
+| VCC           | Appropriate supply | Power supply |
+| GND           | GND | Common ground |
 
 **Note**: Only the TX line from the receiver is required for basic channel data reception.
 
 ## Software Configuration
 
 ### Pin Configuration
-The default pin configuration in `main.c`:
+Pins are selected per board in `src/board_config.h`; the baud rate is defined in `src/comm/crsf_config.h`:
 ```c
-#define CRSF_TX_PIN 2    // ESP32 TX to receiver RX (optional)
-#define CRSF_RX_PIN 3    // ESP32 RX from receiver TX (required)
+#define CRSF_TX_PIN ...  // ESP32 TX to receiver RX (optional)
+#define CRSF_RX_PIN ...  // ESP32 RX from receiver TX (required)
 #define CRSF_BAUDRATE 420000  // Standard CRSF baud rate
 ```
 
