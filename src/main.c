@@ -155,7 +155,7 @@ void espnow_test_send_random_data(void) {
 }
 #endif
 
-// VESC configuration update function - sends one motion parameter per control cycle.
+// VESC configuration update function - sends one motion parameter per armed control cycle.
 void update_vesc_motion_parameters(uint32_t current_time) {
     const uint32_t CONFIG_UPDATE_INTERVAL_MS = 5000;
 
@@ -826,7 +826,7 @@ void crsf_control_task(void *pvParameters) {
         }
         #endif
         
-        // CRSF failsafe should depend on connection state, not whether a new frame
+        // CRSF state processing depends on connection state, not whether a new frame
         // happened to arrive this exact control tick.
         if (crsf_is_connected()) {
             // Reset failsafe state when connection is restored
@@ -898,11 +898,7 @@ void crsf_control_task(void *pvParameters) {
                 last_channel6_state = channel6_high;
             }
         } else {
-            // Connection lost - apply safety behavior
-            if ((current_time - last_failsafe_current_cmd) >= 50) {
-                comm_can_set_current(CAN_VESC_ID, 0.0f);  // Keep motor disabled without flooding CAN TX
-                last_failsafe_current_cmd = current_time;
-            }
+            // Connection lost - reset state and continue telemetry updates.
             if (was_connected) {
                 // Just lost connection - reset state to prepare for next time
                 was_connected = false;
@@ -916,6 +912,14 @@ void crsf_control_task(void *pvParameters) {
             float vesc_target_revolutions = 0.0f; // Default value
             telemetry_espnow_set_payload_data(BOARD_NAME, encoder_degrees, crsf_target_degrees, vesc_target_revolutions);
             #endif
+        }
+
+        // New STATUS_4 frames trigger the zero-current command while stopped.
+        // Fall back to a bounded rate only once STATUS_4 is stale or absent.
+        if ((!crsf_is_connected() || !crsf_is_armed()) && !vesc_position_valid &&
+                (current_time - last_failsafe_current_cmd) >= 50) {
+            comm_can_set_current(CAN_VESC_ID, 0.0f);
+            last_failsafe_current_cmd = current_time;
         }
         
         // ESP-NOW test function - sends random data when DEBUG_ESPNOW_TEST is enabled
@@ -974,12 +978,10 @@ void main_process_control_logic(void) {
     static uint32_t last_can_cmd_debug = 0;
     static uint32_t last_position_debug = 0;
 
-    // These are VESC configuration commands, not position commands. Send them
-    // even when control is disarmed or the current target needs no update.
-    update_vesc_motion_parameters(current_time);
-    
     // Check if armed using utility function (requires CRSF connection)
     if (crsf_is_connected() && crsf_is_armed()) {
+        update_vesc_motion_parameters(current_time);
+
         // After sending startup PID offset sync, wait until a newer STATUS_4 is observed.
         if (startup_pid_offset_sync_waiting_status4) {
             if (latest_status4_rx_tick == startup_pid_offset_status4_tick_at_send) {
@@ -1176,18 +1178,13 @@ void main_process_control_logic(void) {
             }
         }
         
-        // Disarmed or no connection - send zero current command IMMEDIATELY for safety
-        // Send at a bounded rate to keep safety behavior while avoiding CAN TX queue flooding.
+        // A fresh STATUS_4 frame triggered this control cycle, so stop the motor now.
         static uint32_t last_disarmed_debug = 0;
-        static uint32_t last_disarmed_current_cmd = 0;
-        if (current_time - last_disarmed_debug > 2000) { // Debug every 2 seconds, but command every time
+        if (current_time - last_disarmed_debug > 2000) {
             DEBUG_CAN_CMD("CMD_ID=%d (SET_CURRENT) to VESC_ID=%d, value=%.3f [DISARMED/NO_CONNECTION SAFETY]", CAN_PACKET_SET_CURRENT, CAN_VESC_ID, 0.0f);
             last_disarmed_debug = current_time;
         }
-        if ((current_time - last_disarmed_current_cmd) >= 50) {
-            comm_can_set_current(CAN_VESC_ID, 0.0f);  // Send 0A current at 20 Hz in disarmed mode
-            last_disarmed_current_cmd = current_time;
-        }
+        comm_can_set_current(CAN_VESC_ID, 0.0f);
     }
 }
 
