@@ -52,7 +52,7 @@
 static const char *TAG = "";
 
 // ESP-NOW telemetry / shared Wi-Fi configuration
-#if ESP_NOW_TELEMETRY_ENABLE || ESP_NOW_BIDIRECTIONAL_ENABLE
+#if ESP_NOW_TELEMETRY_ENABLE || ESP_NOW_BIDIRECTIONAL_ENABLE || LINKAGE_ESPNOW_CONTROL_ENABLE
 #include "comm/comm_espnow.h"
 #endif
 
@@ -132,10 +132,14 @@ static uint8_t vesc_config_step = 0;
 
 // Forward declarations
 static float get_control_target_angle(void);
-#if LINKAGE_RC_INTERLOCK_ENABLE
+#if LINKAGE_RC_INTERLOCK_ENABLE || LINKAGE_ESPNOW_CONTROL_ENABLE
 static float get_angle_from_rc_channel(uint8_t channel, float min_angle, float max_angle);
+static float get_rc_upper_arm_target_angle(void);
+static float clamp_linkage_target_angle(float requested_elbow_angle, float upper_arm_angle);
+#if LINKAGE_ESPNOW_CONTROL_ENABLE
+static bool get_measured_upper_arm_angle(float *upper_arm_angle);
 #endif
-static float clamp_linkage_target_angle(float requested_elbow_angle);
+#endif
 
 #if DEBUG_ESPNOW_TEST
 // ESP-NOW test function - sends random telemetry data for testing
@@ -962,7 +966,7 @@ void crsf_control_task(void *pvParameters) {
     }
 }
 
-#if LINKAGE_RC_INTERLOCK_ENABLE
+#if LINKAGE_RC_INTERLOCK_ENABLE || LINKAGE_ESPNOW_CONTROL_ENABLE
 static float get_angle_from_rc_channel(uint8_t channel, float min_angle, float max_angle) {
     float normalized_input = crsf_channel_to_normalized(channel);
 
@@ -972,18 +976,20 @@ static float get_angle_from_rc_channel(uint8_t channel, float min_angle, float m
     normalized_input = (normalized_input + 1.0f) / 2.0f;
     return min_angle + (normalized_input * (max_angle - min_angle));
 }
-#endif
 
-static float clamp_linkage_target_angle(float requested_elbow_angle) {
-#if LINKAGE_RC_INTERLOCK_ENABLE
-    const float upper_arm_target_angle = get_angle_from_rc_channel(
+static float get_rc_upper_arm_target_angle(void) {
+    return get_angle_from_rc_channel(
         LINKAGE_UPPER_CONTROL_CHANNEL,
         LINKAGE_UPPER_MIN_ANGLE,
         LINKAGE_UPPER_MAX_ANGLE);
+}
+
+static float clamp_linkage_target_angle(
+        float requested_elbow_angle, float upper_arm_angle) {
     const float min_safe_elbow_angle =
-        upper_arm_target_angle + LINKAGE_MIN_RELATIVE_ANGLE;
+        upper_arm_angle + LINKAGE_MIN_RELATIVE_ANGLE;
     const float max_safe_elbow_angle =
-        upper_arm_target_angle + LINKAGE_MAX_RELATIVE_ANGLE;
+        upper_arm_angle + LINKAGE_MAX_RELATIVE_ANGLE;
 
     if (requested_elbow_angle < min_safe_elbow_angle) {
         return min_safe_elbow_angle;
@@ -992,10 +998,28 @@ static float clamp_linkage_target_angle(float requested_elbow_angle) {
     if (requested_elbow_angle > max_safe_elbow_angle) {
         return max_safe_elbow_angle;
     }
-#endif
 
     return requested_elbow_angle;
 }
+
+#if LINKAGE_ESPNOW_CONTROL_ENABLE
+static bool get_measured_upper_arm_angle(float *upper_arm_angle) {
+    telemetry_payload_t upper_arm_telemetry;
+    uint32_t telemetry_received_at_ms;
+    const uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+    if (!telemetry_espnow_get_latest_payload(
+                &upper_arm_telemetry, &telemetry_received_at_ms) ||
+            current_time - telemetry_received_at_ms > LINKAGE_ESPNOW_STALE_MS ||
+            strcmp(upper_arm_telemetry.board_name, LINKAGE_UPPER_BOARD_NAME) != 0) {
+        return false;
+    }
+
+    *upper_arm_angle = upper_arm_telemetry.encoder_degrees;
+    return true;
+}
+#endif
+#endif
 
 static float get_control_target_angle(void) {
     float normalized_input = crsf_channel_to_normalized(CONTROL_CHANNEL);
@@ -1007,9 +1031,25 @@ static float get_control_target_angle(void) {
     if (normalized_input > 1.0f) normalized_input = 1.0f;
 
     normalized_input = (normalized_input + 1.0f) / 2.0f;
-    const float requested_elbow_angle =
+    float requested_elbow_angle =
         MIN_ANGLE + (normalized_input * (MAX_ANGLE - MIN_ANGLE));
-    return clamp_linkage_target_angle(requested_elbow_angle);
+
+#if LINKAGE_RC_INTERLOCK_ENABLE || LINKAGE_ESPNOW_CONTROL_ENABLE
+    const float rc_upper_arm_target_angle = get_rc_upper_arm_target_angle();
+    float upper_arm_angle = rc_upper_arm_target_angle;
+
+#if LINKAGE_ESPNOW_CONTROL_ENABLE
+    if (get_measured_upper_arm_angle(&upper_arm_angle)) {
+        const float rc_relative_target =
+            requested_elbow_angle - rc_upper_arm_target_angle;
+        requested_elbow_angle = upper_arm_angle + rc_relative_target;
+    }
+#endif
+
+    return clamp_linkage_target_angle(requested_elbow_angle, upper_arm_angle);
+#else
+    return requested_elbow_angle;
+#endif
 }
 
 static float get_arm_transition_max_velocity(uint32_t current_time) {
@@ -1099,6 +1139,16 @@ void main_process_control_logic(void) {
             float crsf_target_degrees = self_righter_active
                 ? SELF_RIGHTER_TARGET_ANGLE
                 : get_control_target_angle();
+#if LINKAGE_RC_INTERLOCK_ENABLE || LINKAGE_ESPNOW_CONTROL_ENABLE
+            if (self_righter_active) {
+                float upper_arm_angle = get_rc_upper_arm_target_angle();
+#if LINKAGE_ESPNOW_CONTROL_ENABLE
+                get_measured_upper_arm_angle(&upper_arm_angle);
+#endif
+                crsf_target_degrees = clamp_linkage_target_angle(
+                    crsf_target_degrees, upper_arm_angle);
+            }
+#endif
             float command_max_velocity = self_righter_active
                 ? MAX_VEL
                 : get_arm_transition_max_velocity(current_time);

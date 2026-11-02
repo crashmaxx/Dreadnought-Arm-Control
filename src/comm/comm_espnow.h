@@ -99,5 +99,6 @@ esp_err_t telemetry_espnow_init(void);
 esp_err_t telemetry_espnow_send_data(const uint8_t *dest_mac, const void *data, size_t data_len);
 void telemetry_espnow_data_prepare(telemetry_espnow_send_param_t *send_param);
 void telemetry_espnow_set_payload_data(const char *board_name, float encoder_degrees, float crsf_target_degrees, float vesc_target_revolutions);
+bool telemetry_espnow_get_latest_payload(telemetry_payload_t *payload, uint32_t *received_at_ms);
 
 #endif

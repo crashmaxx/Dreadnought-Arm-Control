@@ -92,6 +92,10 @@ static telemetry_payload_t s_telemetry_data = {
     .crsf_target_degrees = 0.0f,
     .vesc_target_revolutions = 0.0f
 };
+static telemetry_payload_t s_latest_received_telemetry;
+static uint32_t s_latest_received_telemetry_at_ms = 0;
+static bool s_latest_received_telemetry_valid = false;
+static portMUX_TYPE s_latest_received_telemetry_lock = portMUX_INITIALIZER_UNLOCKED;
 
 esp_err_t espnow_wifi_init_station(uint8_t channel)
 {
@@ -291,6 +295,47 @@ void telemetry_espnow_set_payload_data(const char *board_name, float encoder_deg
     }
 }
 
+bool telemetry_espnow_get_latest_payload(telemetry_payload_t *payload, uint32_t *received_at_ms)
+{
+    if (payload == NULL || received_at_ms == NULL) {
+        return false;
+    }
+
+    portENTER_CRITICAL(&s_latest_received_telemetry_lock);
+    const bool valid = s_latest_received_telemetry_valid;
+    if (valid) {
+        *payload = s_latest_received_telemetry;
+        *received_at_ms = s_latest_received_telemetry_at_ms;
+    }
+    portEXIT_CRITICAL(&s_latest_received_telemetry_lock);
+
+    return valid;
+}
+
+static void telemetry_espnow_store_received_payload(
+        const telemetry_espnow_event_recv_cb_t *recv_cb)
+{
+    const size_t expected_len =
+        sizeof(telemetry_espnow_data_t) + sizeof(telemetry_payload_t);
+
+    if (memcmp(recv_cb->mac_addr, s_telemetry_peer_mac, ESP_NOW_ETH_ALEN) != 0 ||
+            recv_cb->data_len < expected_len) {
+        return;
+    }
+
+    telemetry_payload_t received_payload;
+    memcpy(&received_payload,
+           recv_cb->data + sizeof(telemetry_espnow_data_t),
+           sizeof(received_payload));
+    received_payload.board_name[sizeof(received_payload.board_name) - 1] = '\0';
+
+    portENTER_CRITICAL(&s_latest_received_telemetry_lock);
+    s_latest_received_telemetry = received_payload;
+    s_latest_received_telemetry_at_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    s_latest_received_telemetry_valid = true;
+    portEXIT_CRITICAL(&s_latest_received_telemetry_lock);
+}
+
 /* Prepare ESPNOW data to be sent. */
 void telemetry_espnow_data_prepare(telemetry_espnow_send_param_t *send_param)
 {
@@ -383,6 +428,10 @@ static void telemetry_espnow_task(void *pvParameter)
                 telemetry_espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
 
                 ret = telemetry_espnow_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &recv_seq, &recv_magic);
+                if (ret == TELEMETRY_ESPNOW_DATA_BROADCAST ||
+                        ret == TELEMETRY_ESPNOW_DATA_UNICAST) {
+                    telemetry_espnow_store_received_payload(recv_cb);
+                }
                 free(recv_cb->data);
                 if (ret == TELEMETRY_ESPNOW_DATA_BROADCAST) {
                     ESP_LOGI(TAG, "Receive %dth broadcast data from: "MACSTR", len: %d", recv_seq, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);

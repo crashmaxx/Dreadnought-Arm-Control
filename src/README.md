@@ -21,7 +21,7 @@ For SPI magnetic encoders, `drivers/enc_as504x.c` reads and validates single-tur
 
 Normal position commands require a connected and armed CRSF receiver, fresh VESC position data, and valid encoder feedback or a fresh VESC position fallback. Disarm or CRSF connection loss sends zero current. Invalid AS504x samples are rejected and do not advance the multi-turn position.
 
-### Elbow Four-Bar RC Interlock
+### Elbow Four-Bar Interlock
 
 The elbow configurations include an optional RC-only baseline for protecting a four-bar linkage. When `LINKAGE_RC_INTERLOCK_ENABLE` is `1`, the elbow target is constrained so that:
 
@@ -30,6 +30,10 @@ LINKAGE_MIN_RELATIVE_ANGLE <= elbow_target - upper_arm_target <= LINKAGE_MAX_REL
 ```
 
 `upper_arm_target` is calculated from the shared RC upper-arm channel and its configured target range. The interlock is disabled by default because the safe relative limits must be measured on the physical linkage. Configure the `LINKAGE_*` values in the applicable elbow block in `board_config.h`, validate the limits at low torque, then enable it. This is a command-based safeguard only; it does not replace a future measured-angle interlock between the upper-arm and elbow boards.
+
+`LINKAGE_ESPNOW_CONTROL_ENABLE` enables the measured-angle path. The upper board must send its standard ESP-NOW telemetry to the elbow board, and `PEER_MAC_ADDR` on each firmware build must identify the other board. A valid packet must have the configured upper-board name and be newer than `LINKAGE_ESPNOW_STALE_MS`.
+
+The measured path preserves the transmitter's current calibration: it derives a relative bend target from the existing mixed RC target and its RC-derived upper-arm estimate, then re-anchors that bend to the measured upper-arm angle. If telemetry is missing, stale, or from the wrong board, control automatically falls back to the RC-derived upper-arm estimate and remains within the same relative-angle safety limits.
 
 ## Build
 

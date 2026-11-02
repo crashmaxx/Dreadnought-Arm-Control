@@ -76,14 +76,6 @@
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
 
-  // Four-bar linkage safety. Calibrate these before enabling the RC-only interlock.
-  #define LINKAGE_RC_INTERLOCK_ENABLE 0
-  #define LINKAGE_UPPER_CONTROL_CHANNEL 2
-  #define LINKAGE_UPPER_MIN_ANGLE -130.0f
-  #define LINKAGE_UPPER_MAX_ANGLE 130.0f
-  #define LINKAGE_MIN_RELATIVE_ANGLE -360.0f
-  #define LINKAGE_MAX_RELATIVE_ANGLE 360.0f
-
  //FRAM configuration I2C pins
   #define FRAM_ENABLE 1
   #define FRAM_I2C_SDA_PIN 4    // SDA pin for ESP32-S3  
@@ -179,6 +171,9 @@
   #define LINKAGE_UPPER_MAX_ANGLE 130.0f
   #define LINKAGE_MIN_RELATIVE_ANGLE -360.0f
   #define LINKAGE_MAX_RELATIVE_ANGLE 360.0f
+  #define LINKAGE_ESPNOW_CONTROL_ENABLE 0
+  #define LINKAGE_ESPNOW_STALE_MS 250U
+  #define LINKAGE_UPPER_BOARD_NAME "Left_Upper"
 
    //FRAM configuration I2C pins
   #define FRAM_ENABLE 1
@@ -229,6 +224,17 @@
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
   #define GEAR_RATIO 20.0f  // Motor to joint encoder reduction ratio
+
+  // Four-bar linkage safety. Calibrate these before enabling either interlock.
+  #define LINKAGE_RC_INTERLOCK_ENABLE 0
+  #define LINKAGE_UPPER_CONTROL_CHANNEL 2
+  #define LINKAGE_UPPER_MIN_ANGLE -130.0f
+  #define LINKAGE_UPPER_MAX_ANGLE 130.0f
+  #define LINKAGE_MIN_RELATIVE_ANGLE -360.0f
+  #define LINKAGE_MAX_RELATIVE_ANGLE 360.0f
+  #define LINKAGE_ESPNOW_CONTROL_ENABLE 0
+  #define LINKAGE_ESPNOW_STALE_MS 250U
+  #define LINKAGE_UPPER_BOARD_NAME "Right_Upper"
 
    //FRAM configuration I2C pins
   #define FRAM_ENABLE 1
@@ -599,6 +605,18 @@
 
 #ifndef LINKAGE_MAX_RELATIVE_ANGLE
   #define LINKAGE_MAX_RELATIVE_ANGLE 360.0f
+#endif
+
+#ifndef LINKAGE_ESPNOW_CONTROL_ENABLE
+  #define LINKAGE_ESPNOW_CONTROL_ENABLE 0
+#endif
+
+#ifndef LINKAGE_ESPNOW_STALE_MS
+  #define LINKAGE_ESPNOW_STALE_MS 250U
+#endif
+
+#ifndef LINKAGE_UPPER_BOARD_NAME
+  #define LINKAGE_UPPER_BOARD_NAME ""
 #endif
 
 #ifndef GEAR_RATIO
