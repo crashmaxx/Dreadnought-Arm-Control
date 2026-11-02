@@ -969,6 +969,14 @@ static float get_control_target_angle(void) {
     return MIN_ANGLE + (normalized_input * (MAX_ANGLE - MIN_ANGLE));
 }
 
+static float get_arm_transition_max_velocity(uint32_t current_time) {
+    if (current_time < arm_transition_hold_until_ms) {
+        return MAX_VEL * ARM_TRANSITION_SPEED_SCALE;
+    }
+
+    return MAX_VEL;
+}
+
 // Control function called from CAN Status 4 callback - executes position control logic
 // This is invoked by crsf_control_task when a NEW STATUS_4 frame is observed.
 // That keeps control synchronized with fresh VESC position data without running
@@ -991,14 +999,14 @@ void main_process_control_logic(void) {
             }
 
             startup_pid_offset_sync_waiting_status4 = false;
-            arm_transition_hold_until_ms = current_time + 300;
+            arm_transition_hold_until_ms = current_time + ARM_TRANSITION_DURATION_MS;
             ESP_LOGI(TAG, "Startup sync: STATUS_4 refreshed after PID offset update");
         }
 
         // Handle arm transition once to avoid startup lurch.
         if (!was_armed_last_cycle) {
             was_armed_last_cycle = true;
-            arm_transition_hold_until_ms = current_time + 300;
+            arm_transition_hold_until_ms = current_time + ARM_TRANSITION_DURATION_MS;
 
             // If FRAM startup reconciliation ran, sync VESC PID position offset to current encoder angle.
             if (startup_pid_offset_sync_pending) {
@@ -1017,15 +1025,17 @@ void main_process_control_logic(void) {
                 }
             } else {
                 // No startup sync needed: hold current VESC position for one control frame.
-                comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_current_position, MAX_VEL);
+                comm_can_set_pos_floatingpoint_with_vel(
+                    CAN_VESC_ID, vesc_current_position, get_arm_transition_max_velocity(current_time));
             }
 
             return;
         }
 
-        // Hold briefly after arm transition so status data can settle before normal control.
+        // Limit startup speed after arm transition while status data settles.
         if (current_time < arm_transition_hold_until_ms) {
-            comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_current_position, MAX_VEL);
+            comm_can_set_pos_floatingpoint_with_vel(
+                CAN_VESC_ID, vesc_current_position, get_arm_transition_max_velocity(current_time));
             return;
         }
 

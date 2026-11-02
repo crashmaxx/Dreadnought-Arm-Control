@@ -31,6 +31,10 @@
 // ESPNOW Peer MAC address for telemetry
 #define PEER_MAC_ADDR {0x18, 0x8B, 0x0E, 0xFF, 0x02, 0xE4}  // Replace with your peer's MAC address
 
+// Startup movement limiting
+#define ARM_TRANSITION_SPEED_SCALE 0.25f
+#define ARM_TRANSITION_DURATION_MS 1000U
+
 // ================= BOARD CONFIGURATIONS =================
 
 #ifdef BOARD_LEFT_CLAW
