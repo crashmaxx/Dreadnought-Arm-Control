@@ -132,6 +132,10 @@ static uint8_t vesc_config_step = 0;
 
 // Forward declarations
 static float get_control_target_angle(void);
+#if LINKAGE_RC_INTERLOCK_ENABLE
+static float get_angle_from_rc_channel(uint8_t channel, float min_angle, float max_angle);
+#endif
+static float clamp_linkage_target_angle(float requested_elbow_angle);
 
 #if DEBUG_ESPNOW_TEST
 // ESP-NOW test function - sends random telemetry data for testing
@@ -958,6 +962,41 @@ void crsf_control_task(void *pvParameters) {
     }
 }
 
+#if LINKAGE_RC_INTERLOCK_ENABLE
+static float get_angle_from_rc_channel(uint8_t channel, float min_angle, float max_angle) {
+    float normalized_input = crsf_channel_to_normalized(channel);
+
+    if (normalized_input < -1.0f) normalized_input = -1.0f;
+    if (normalized_input > 1.0f) normalized_input = 1.0f;
+
+    normalized_input = (normalized_input + 1.0f) / 2.0f;
+    return min_angle + (normalized_input * (max_angle - min_angle));
+}
+#endif
+
+static float clamp_linkage_target_angle(float requested_elbow_angle) {
+#if LINKAGE_RC_INTERLOCK_ENABLE
+    const float upper_arm_target_angle = get_angle_from_rc_channel(
+        LINKAGE_UPPER_CONTROL_CHANNEL,
+        LINKAGE_UPPER_MIN_ANGLE,
+        LINKAGE_UPPER_MAX_ANGLE);
+    const float min_safe_elbow_angle =
+        upper_arm_target_angle + LINKAGE_MIN_RELATIVE_ANGLE;
+    const float max_safe_elbow_angle =
+        upper_arm_target_angle + LINKAGE_MAX_RELATIVE_ANGLE;
+
+    if (requested_elbow_angle < min_safe_elbow_angle) {
+        return min_safe_elbow_angle;
+    }
+
+    if (requested_elbow_angle > max_safe_elbow_angle) {
+        return max_safe_elbow_angle;
+    }
+#endif
+
+    return requested_elbow_angle;
+}
+
 static float get_control_target_angle(void) {
     float normalized_input = crsf_channel_to_normalized(CONTROL_CHANNEL);
     #if MIXING_ENABLE
@@ -968,7 +1007,9 @@ static float get_control_target_angle(void) {
     if (normalized_input > 1.0f) normalized_input = 1.0f;
 
     normalized_input = (normalized_input + 1.0f) / 2.0f;
-    return MIN_ANGLE + (normalized_input * (MAX_ANGLE - MIN_ANGLE));
+    const float requested_elbow_angle =
+        MIN_ANGLE + (normalized_input * (MAX_ANGLE - MIN_ANGLE));
+    return clamp_linkage_target_angle(requested_elbow_angle);
 }
 
 static float get_arm_transition_max_velocity(uint32_t current_time) {
