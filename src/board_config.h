@@ -7,11 +7,11 @@
 //#define BOARD_LEFT_CLAW
 //#define BOARD_RIGHT_CLAW
 //#define BOARD_LEFT_ELBOW
-#define BOARD_RIGHT_ELBOW
+//#define BOARD_RIGHT_ELBOW
 //#define BOARD_LEFT_UPPER
 //#define BOARD_RIGHT_UPPER
 //#define BOARD_LEFT_SHOULDER
-//#define BOARD_RIGHT_SHOULDER
+#define BOARD_RIGHT_SHOULDER
 //#define BOARD_LEFT_SHOULDER_DEMO
 //#define BOARD_CUSTOM
 
@@ -378,9 +378,9 @@
   
   // Control parameters
   #define CONTROL_CHANNEL 1
-  #define REST_ANGLE 10.0f
-  #define MIN_ANGLE -30.0f
-  #define MAX_ANGLE 30.0f
+  #define REST_ANGLE 20.0f
+  #define MIN_ANGLE -50.0f
+  #define MAX_ANGLE 50.0f
   #define MAX_VEL 6300.0f    // Maximum velocity for position commands (slower for shoulder)
   #define MAX_ACCEL 10000.0f  // Maximum acceleration for position commands
   #define MAX_DECEL 10000.0f  // Maximum deceleration for position commands
