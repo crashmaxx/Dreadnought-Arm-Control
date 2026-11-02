@@ -35,6 +35,10 @@
 #define ARM_TRANSITION_SPEED_SCALE 0.25f
 #define ARM_TRANSITION_DURATION_MS 1000U
 
+// Flip recovery macro
+#define SELF_RIGHTER_CHANNEL 7
+#define SELF_RIGHTER_RELEASE_DURATION_MS 200U
+
 // ================= BOARD CONFIGURATIONS =================
 
 #ifdef BOARD_LEFT_CLAW
@@ -124,6 +128,8 @@
 
 #ifdef BOARD_LEFT_ELBOW
   #define BOARD_NAME "Left_Elbow"
+  #define SELF_RIGHTER_ENABLE 1
+  #define SELF_RIGHTER_TARGET_ANGLE 0.0f
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
   #define ENCODER_A_PIN 8       // CS (Blue)
   #define ENCODER_B_PIN 11       // MOSI (Yellow)
@@ -172,6 +178,8 @@
 
 #ifdef BOARD_RIGHT_ELBOW
   #define BOARD_NAME "Right_Elbow"
+  #define SELF_RIGHTER_ENABLE 1
+  #define SELF_RIGHTER_TARGET_ANGLE 0.0f
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
   #define ENCODER_A_PIN 8      // CS (Blue)
   #define ENCODER_B_PIN 11       // MOSI (Yellow)
@@ -220,6 +228,8 @@
 
 #ifdef BOARD_LEFT_UPPER
   #define BOARD_NAME "Left_Upper"
+  #define SELF_RIGHTER_ENABLE 1
+  #define SELF_RIGHTER_TARGET_ANGLE 0.0f
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
   #define ENCODER_A_PIN 8       // CS (Blue)
   #define ENCODER_B_PIN 11       // MOSI (Yellow)
@@ -265,6 +275,8 @@
 
 #ifdef BOARD_RIGHT_UPPER
   #define BOARD_NAME "Right_Upper"
+  #define SELF_RIGHTER_ENABLE 1
+  #define SELF_RIGHTER_TARGET_ANGLE 0.0f
   #define ENCODER_TYPE ENCODER_TYPE_DUAL_HYBRID
   #define ENCODER_A_PIN 8       // CS (Blue)
   #define ENCODER_B_PIN 11       // MOSI (Yellow)
@@ -310,6 +322,8 @@
 
 #ifdef BOARD_LEFT_SHOULDER
   #define BOARD_NAME "Left_Shoulder"
+  #define SELF_RIGHTER_ENABLE 1
+  #define SELF_RIGHTER_TARGET_ANGLE 180.0f
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
 
   // SPI pins for magnetic encoder
@@ -357,6 +371,8 @@
 
 #ifdef BOARD_RIGHT_SHOULDER
   #define BOARD_NAME "Right_Shoulder"
+  #define SELF_RIGHTER_ENABLE 1
+  #define SELF_RIGHTER_TARGET_ANGLE 180.0f
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
 
   // SPI pins for magnetic encoder
@@ -404,6 +420,8 @@
 
 #ifdef BOARD_LEFT_SHOULDER_DEMO
   #define BOARD_NAME "Left_Shoulder"
+  #define SELF_RIGHTER_ENABLE 1
+  #define SELF_RIGHTER_TARGET_ANGLE 180.0f
   #define ENCODER_TYPE ENCODER_TYPE_SPI_MAGNETIC
 
   // SPI pins for magnetic encoder
@@ -557,6 +575,14 @@
 
 #ifndef MAX_DECEL
   #define MAX_DECEL 10000.0f
+#endif
+
+#ifndef SELF_RIGHTER_ENABLE
+  #define SELF_RIGHTER_ENABLE 0
+#endif
+
+#ifndef SELF_RIGHTER_TARGET_ANGLE
+  #define SELF_RIGHTER_TARGET_ANGLE 0.0f
 #endif
 
 // CAN defaults

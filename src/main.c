@@ -116,6 +116,8 @@ static bool was_armed_last_cycle = false;
 static bool startup_encoder_reference_reconciled = false;
 static bool startup_pid_offset_sync_pending = false;
 static uint32_t arm_transition_hold_until_ms = 0;
+static uint32_t self_righter_release_until_ms = 0;
+static bool self_righter_was_active = false;
 static bool startup_pid_offset_sync_waiting_status4 = false;
 static TickType_t startup_pid_offset_status4_tick_at_send = 0;
 static TickType_t latest_status4_rx_tick = 0;
@@ -970,7 +972,8 @@ static float get_control_target_angle(void) {
 }
 
 static float get_arm_transition_max_velocity(uint32_t current_time) {
-    if (current_time < arm_transition_hold_until_ms) {
+    if (current_time < arm_transition_hold_until_ms ||
+            current_time < self_righter_release_until_ms) {
         return MAX_VEL * ARM_TRANSITION_SPEED_SCALE;
     }
 
@@ -988,6 +991,17 @@ void main_process_control_logic(void) {
 
     // Check if armed using utility function (requires CRSF connection)
     if (crsf_is_connected() && crsf_is_armed()) {
+        #if SELF_RIGHTER_ENABLE
+        bool self_righter_active = crsf_is_channel_high(SELF_RIGHTER_CHANNEL);
+        #else
+        bool self_righter_active = false;
+        #endif
+
+        if (self_righter_was_active && !self_righter_active) {
+            self_righter_release_until_ms = current_time + SELF_RIGHTER_RELEASE_DURATION_MS;
+        }
+        self_righter_was_active = self_righter_active;
+
         update_vesc_motion_parameters(current_time);
 
         // After sending startup PID offset sync, wait until a newer STATUS_4 is observed.
@@ -1033,7 +1047,7 @@ void main_process_control_logic(void) {
         }
 
         // Limit startup speed after arm transition while status data settles.
-        if (current_time < arm_transition_hold_until_ms) {
+        if (current_time < arm_transition_hold_until_ms && !self_righter_active) {
             comm_can_set_pos_floatingpoint_with_vel(
                 CAN_VESC_ID, vesc_current_position, get_arm_transition_max_velocity(current_time));
             return;
@@ -1041,7 +1055,12 @@ void main_process_control_logic(void) {
 
         // Armed mode - send actual motor commands
         if (vesc_position_valid) {
-            float crsf_target_degrees = get_control_target_angle();
+            float crsf_target_degrees = self_righter_active
+                ? SELF_RIGHTER_TARGET_ANGLE
+                : get_control_target_angle();
+            float command_max_velocity = self_righter_active
+                ? MAX_VEL
+                : get_arm_transition_max_velocity(current_time);
             
             // Get current position feedback - use encoder if valid, otherwise VESC fallback
             float current_position_degrees;
@@ -1079,10 +1098,11 @@ void main_process_control_logic(void) {
             
             // Rate limit CAN command debug to every 2 seconds
             if (current_time - last_can_cmd_debug > 2000) {
-                DEBUG_CAN_CMD("CMD_ID=%d (SET_POS_FLOATINGPOINT) to VESC_ID=%d, pos=%.6f, max_vel=%.1f", CAN_PACKET_SET_POS_FLOATINGPOINT, CAN_VESC_ID, vesc_target_position_revolutions, MAX_VEL);
+                DEBUG_CAN_CMD("CMD_ID=%d (SET_POS_FLOATINGPOINT) to VESC_ID=%d, pos=%.6f, max_vel=%.1f", CAN_PACKET_SET_POS_FLOATINGPOINT, CAN_VESC_ID, vesc_target_position_revolutions, command_max_velocity);
                 last_can_cmd_debug = current_time;
             }
-            comm_can_set_pos_floatingpoint_with_vel(CAN_VESC_ID, vesc_target_position_revolutions, MAX_VEL);
+            comm_can_set_pos_floatingpoint_with_vel(
+                CAN_VESC_ID, vesc_target_position_revolutions, command_max_velocity);
             
             // Save current encoder angle to FRAM after each CAN position command
             #if FRAM_ENABLE
@@ -1139,6 +1159,8 @@ void main_process_control_logic(void) {
     } else {
         was_armed_last_cycle = false;
         arm_transition_hold_until_ms = 0;
+        self_righter_release_until_ms = 0;
+        self_righter_was_active = false;
         startup_pid_offset_sync_waiting_status4 = false;
 
         // Disarmed mode - show what position control would do for debugging
